@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7633ddf112185ff41bcb87a7edace626, type: 3}
+  m_Name: rescue_expert
+  m_EditorClassIdentifier: Assembly-CSharp::MoraeGames.Skill.SkillNode
+  id: rescue_expert
+  displayName: Rescue Expert
+  description: "\uAD6C\uCD9C \uC2DC\uAC04 -1\uCD08"
+  icon: {fileID: 0}
+  maxLevel: 1
+  cost: 2
+  prerequisites:
+  - {fileID: 11400000, guid: 54db4c9996177854caf2e8752d04dd42, type: 2}
+  modifiers:
+  - type: 7
+    value: 1

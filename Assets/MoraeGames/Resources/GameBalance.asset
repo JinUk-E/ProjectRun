@@ -1,0 +1,73 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b37c7c0b1f557df42b35d40618d82caf, type: 3}
+  m_Name: GameBalance
+  m_EditorClassIdentifier: Assembly-CSharp::MoraeGames.Core.GameBalance
+  copCount: 3
+  robberCount: 5
+  copArrestRange: 2
+  copAutoArrestRadius: 1.2
+  copDetectionRadius: 15
+  copNavSpeed: 5.5
+  copMoveSpeed: 5.5
+  robberDetectionRadius: 15
+  robberSafeDistance: 25
+  robberNavSpeed: 5
+  robberMoveSpeed: 5
+  robberInteractionRange: 2
+  robberFleeDistance: 10
+  robberRescueDecisionInterval: 2
+  robberRescueAttemptChance: 0.4
+  wanderTimeout: 5
+  copWanderRadius: 15
+  robberWanderRadius: 20
+  chaseAbandonMultiplier: 1.5
+  defaultMoveSpeed: 5
+  defaultHealth: 100
+  lootSpotCount: 6
+  lootRobberyDuration: 4
+  lootWinThreshold: 0.6
+  lootValuePerSpot: 100
+  rescueDuration: 3
+  prisonZoneRadius: 5
+  invincibilityDuration: 3
+  copSpeedBoostMultiplier: 1.5
+  copSpeedBoostDuration: 3
+  copSpeedBoostCooldown: 15
+  copAreaScanRadius: 30
+  copAreaScanDuration: 2
+  copAreaScanCooldown: 20
+  ccProjectileSpeed: 20
+  ccProjectileCooldown: 12
+  ccSlowDuration: 3
+  ccSlowMultiplier: 0.4
+  prisonLockdownDuration: 8
+  prisonLockdownCooldown: 30
+  prisonLockdownRadius: 7
+  robberSpeedBurstMultiplier: 2
+  robberSpeedBurstDuration: 2
+  robberSpeedBurstCooldown: 12
+  robberSmokeBombDuration: 5
+  robberSmokeBombCooldown: 25
+  robberSmokeBombRadius: 5
+  robberDisguiseDuration: 5
+  robberDisguiseCooldown: 30
+  decoyCloneDuration: 6
+  decoyCloneCooldown: 20
+  decoyCloneSpeed: 3
+  coopSwitchDoorDuration: 5
+  boostPadMultiplier: 2
+  mudTrapMultiplier: 0.5
+  readyCountdownDuration: 3
+  gameTime: 180
+  systemMessageDuration: 2
+  pingDuration: 3

@@ -1,0 +1,5 @@
+Kenney environment assets (CC0)
+Industrial: https://kenney.nl/assets/city-kit-industrial
+Dungeon: https://kenney.nl/assets/modular-dungeon-kit
+Downloaded 2026-10-20. Original licenses are included in each folder.
+Facade meshes are derived from the supplied industrial buildings, cropped for open-top gameplay.
