@@ -386,16 +386,8 @@ namespace MoraeGames.Game
             }
 
             _cachedRobbers.Clear();
-            RoleManager.PlayerRole localRole = RoleManager.PlayerRole.None;
-            if (RoleManager.Instance != null)
-            {
-                localRole = RoleManager.Instance.GetRole("Player1");
-            }
-
-            if (localRole == RoleManager.PlayerRole.None)
-            {
-                localRole = Random.value > 0.5f ? RoleManager.PlayerRole.Cop : RoleManager.PlayerRole.Robber;
-            }
+            // Direct scene launch and old role selections must follow the same robber-only mode.
+            RoleManager.PlayerRole localRole = RoleManager.PlayerRole.Robber;
 
             _localRole = localRole;
             bool isLocalCop = localRole == RoleManager.PlayerRole.Cop;
@@ -477,8 +469,8 @@ namespace MoraeGames.Game
                     Debug.LogError("[InGameManager] Missing confirmed online selection.");
                     return;
                 }
-                if (clientId == NetworkManager.Singleton.LocalClientId) _localRole = selection.Role;
-                SpawnNetworkedCharacter(selection.Role, clientId, false, ref copIndex, ref robberIndex, selection.Character);
+                if (clientId == NetworkManager.Singleton.LocalClientId) _localRole = RoleManager.PlayerRole.Robber;
+                SpawnNetworkedCharacter(RoleManager.PlayerRole.Robber, clientId, false, ref copIndex, ref robberIndex, Mathf.Clamp(selection.Character,0,robberPrefabs.Length-1));
             }
             while (copIndex < GameConstants.CopCount)
                 SpawnNetworkedCharacter(RoleManager.PlayerRole.Cop, 0, true, ref copIndex, ref robberIndex);

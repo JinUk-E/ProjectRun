@@ -398,8 +398,9 @@ namespace MoraeGames.UI
                     break;
                 }
 
-                PrisonZone prison = _overlapBuffer[i].GetComponent<PrisonZone>();
-                if (prison != null && prison.HasArrestedRobbers())
+                var door = _overlapBuffer[i].GetComponent<PrisonDoorInteraction>();
+                PrisonZone prison = door != null ? door.prison : null;
+                if (prison != null && prison.CanInteract(_localRobber) && prison.HasArrestedRobbers())
                 {
                     if (prison.IsBeingRescued)
                     {
@@ -420,8 +421,8 @@ namespace MoraeGames.UI
             {
                 case 1: interactionPromptText.SetText("F / 행동 버튼을 눌러 탈취"); break;
                 case 2: interactionPromptText.SetText("계속 누르세요 · 탈취 {0}%", percent); break;
-                case 3: interactionPromptText.SetText("F / 행동 버튼을 눌러 동료 구출"); break;
-                case 4: interactionPromptText.SetText("계속 누르세요 · 구출 {0}%", percent); break;
+                case 3: interactionPromptText.SetText("감옥 문 · F / 행동을 길게 눌러 잠금 해제"); break;
+                case 4: interactionPromptText.SetText("문 앞에서 계속 누르세요 · 잠금 해제 {0}%", percent); break;
                 case 5: interactionPromptText.SetText("경보 금고 · 탈취 시 경찰 출동! F / 행동 길게"); break;
                 case 6: interactionPromptText.SetText("경보 위험 · 탈취 {0}% · 출구를 확보하세요", percent); break;
                 default: interactionPromptText.SetText(""); break;

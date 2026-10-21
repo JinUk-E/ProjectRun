@@ -112,6 +112,8 @@ namespace MoraeGames.Network
                 {
                     var prison = FindFirstObjectByType<PrisonZone>();
                     var rescuer = FindObjectsByType<RobberController>(FindObjectsSortMode.None).First(r => !r.IsArrested);
+                    rescuer.transform.position=prison.InteractionPosition;
+                    var rescueBody=rescuer.GetComponent<Rigidbody>(); if(rescueBody!=null) rescueBody.position=prison.InteractionPosition;
                     if (!prison.TryStartRescue(rescuer.gameObject)) { Finish(false, "Rescue could not start"); return; }
                     prison.UpdateRescue(prison.rescueDuration + 0.1f);
                     _rescued = !_robber.IsArrested;

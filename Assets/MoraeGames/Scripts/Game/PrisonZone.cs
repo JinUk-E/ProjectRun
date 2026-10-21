@@ -12,6 +12,21 @@ namespace MoraeGames.Game
     {
         [Header("Rescue Settings")]
         public float rescueDuration = GameConstants.RescueDuration;
+        [Header("Prison Door")]
+        public Transform doorPoint;
+        public Transform doorVisual;
+        public BoxCollider doorCollider;
+        public UnityEngine.AI.NavMeshObstacle doorObstacle;
+        public TMPro.TMP_Text doorStatusText;
+        public float interactionRange = 2.4f;
+        public float doorOpenDuration = 4f;
+        public bool DoorOpen { get; private set; }
+        public Vector3 InteractionPosition => doorPoint != null ? doorPoint.position + doorPoint.forward * 1.5f : transform.position;
+        private float _openRemaining;
+        private Vector3 _doorClosedPosition;
+        private RobberController _rescuerController;
+        private int _lastDoorStatus = -1;
+        private int _lastDoorPercent = -1;
 
         private float _rescueProgress = 0f;
         private bool _isBeingRescued = false;
@@ -25,11 +40,62 @@ namespace MoraeGames.Game
         private void Awake()
         {
             if (rescueDuration <= 0) rescueDuration = GameConstants.RescueDuration;
+            if (doorVisual != null) _doorClosedPosition = doorVisual.localPosition;
         }
 
         private void Start()
         {
             RefreshRobberCache();
+        }
+
+        private void Update()
+        {
+            if (MoraeGames.Network.NetworkSessionManager.HasStateAuthority)
+            {
+                if (_isBeingRescued && !CanInteract(_rescuerController)) CancelRescue();
+                if (DoorOpen)
+                {
+                    _openRemaining -= Time.deltaTime;
+                    if (_openRemaining <= 0 && !DoorwayOccupied()) DoorOpen = false;
+                }
+            }
+            if (doorCollider != null) doorCollider.enabled = !DoorOpen;
+            if (doorObstacle != null) doorObstacle.enabled = !DoorOpen;
+            if (doorVisual != null)
+                doorVisual.localPosition = Vector3.MoveTowards(doorVisual.localPosition,_doorClosedPosition + Vector3.right * (DoorOpen ? 3.4f : 0),Time.deltaTime*6);
+            int state = DoorOpen ? 2 : _isBeingRescued ? 1 : 0;
+            int percent = Mathf.RoundToInt(GetRescueProgress()*100);
+            if (doorStatusText != null && (state != _lastDoorStatus || percent != _lastDoorPercent))
+            {
+                _lastDoorStatus=state; _lastDoorPercent=percent;
+                if (state==2) doorStatusText.SetText("구출 성공 · 문 열림");
+                else if (state==1) doorStatusText.SetText("잠금 해제 중 {0}%",percent);
+                else doorStatusText.SetText("문 앞에서 F / 행동 길게 · 동료 구출");
+                doorStatusText.color=state==2?Color.green:state==1?Color.yellow:Color.white;
+            }
+        }
+
+        /// <summary>Only free robbers on the outside face of the door may operate its lock.</summary>
+        public bool CanInteract(RobberController robber)
+        {
+            if (doorPoint == null || robber == null || robber.IsArrested || !robber.isActiveAndEnabled) return false;
+            Vector3 offset=robber.transform.position-doorPoint.position;
+            if (Mathf.Abs(offset.y)>2.5f) return false;
+            offset.y=0;
+            return offset.sqrMagnitude<=interactionRange*interactionRange && Vector3.Dot(offset,doorPoint.forward)>=.2f
+                && Mathf.Abs(Vector3.Dot(offset,doorPoint.right))<=1.7f;
+        }
+
+        private bool DoorwayOccupied()
+        {
+            // Never close a gate on a free player or trap somebody who walked inside while open.
+            foreach(var player in PlayerController.Instances)
+            {
+                if(player==null || player is RobberController robber && robber.IsArrested) continue;
+                Vector3 offset=player.transform.position-transform.position;
+                if(Mathf.Abs(offset.x)<5.5f && Mathf.Abs(offset.z)<6.2f) return true;
+            }
+            return false;
         }
 
         /// <summary>Refreshes the cached list of all robbers in the scene.</summary>
@@ -65,9 +131,12 @@ namespace MoraeGames.Game
 
             if (_isBeingRescued) return false;
             if (!HasArrestedRobbers()) return false;
+            var robber = rescuerObj != null ? rescuerObj.GetComponent<RobberController>() : null;
+            if (!CanInteract(robber)) return false;
 
             _isBeingRescued = true;
             _rescuer = rescuerObj;
+            _rescuerController = robber;
             _rescueProgress = 0f;
             return true;
         }
@@ -75,15 +144,16 @@ namespace MoraeGames.Game
         /// <summary>Advances rescue progress by the given delta time.</summary>
         public void UpdateRescue(float deltaTime)
         {
-            if (!_isBeingRescued) return;
+            if (!MoraeGames.Network.NetworkSessionManager.HasStateAuthority || !_isBeingRescued) return;
 
             // Rescuer destroyed mid-rescue: release the lock instead of deadlocking
-            if (_rescuer == null)
+            if (!CanInteract(_rescuerController))
             {
                 CancelRescue();
                 return;
             }
 
+            if (float.IsNaN(deltaTime) || float.IsInfinity(deltaTime) || deltaTime<=0) return;
             _rescueProgress += deltaTime;
 
             if (_rescueProgress >= rescueDuration)
@@ -97,12 +167,17 @@ namespace MoraeGames.Game
         {
             _isBeingRescued = false;
             _rescuer = null;
+            _rescuerController = null;
             _rescueProgress = 0f;
         }
 
         private void CompleteRescue()
         {
             _isBeingRescued = false;
+            DoorOpen = true;
+            _openRemaining = doorOpenDuration;
+            if(doorCollider!=null) doorCollider.enabled=false;
+            if(doorObstacle!=null) doorObstacle.enabled=false;
 
             // Mass rescue: free ALL arrested robbers at once per game design spec
             if (_allRobbers == null || _allRobbers.Length == 0)
@@ -115,9 +190,9 @@ namespace MoraeGames.Game
 
                 // Teleport first so the NavMeshAgent re-enables at the exit position,
                 // then flip the state (OnRescued -> HandleRescuedState enables the agent).
-                float angle = rescuedCount * Mathf.PI * 2f / 6f;
-                float exitDist = GameConstants.PrisonZoneRadius + 2f;
-                Vector3 rescueExit = transform.position + new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * exitDist;
+                Vector3 rescueExit = doorPoint.position + doorPoint.forward * (3f + rescuedCount / 3 * 1.3f)
+                    + doorPoint.right * ((rescuedCount % 3 - 1) * 1.25f);
+                if(UnityEngine.AI.NavMesh.SamplePosition(rescueExit,out var hit,1.2f,UnityEngine.AI.NavMesh.AllAreas)) rescueExit=hit.position;
 
                 Rigidbody rb = robber.GetComponent<Rigidbody>();
                 if (rb != null)
@@ -146,6 +221,7 @@ namespace MoraeGames.Game
                 GameManager.Instance.BroadcastSystemMessage($"구출 성공! 도둑 {rescuedCount}명이 탈출했어요", Color.green);
 
             _rescuer = null;
+            _rescuerController = null;
             _rescueProgress = 0f;
         }
 
@@ -156,11 +232,12 @@ namespace MoraeGames.Game
         public bool IsBeingRescued => _isBeingRescued;
 
         /// <summary>Copies server progress without running rescue gameplay.</summary>
-        public void ApplyRemoteState(bool rescuing, float progress)
+        public void ApplyRemoteState(bool rescuing, float progress, bool doorOpen)
         {
             if (MoraeGames.Network.NetworkSessionManager.HasStateAuthority) return;
             _isBeingRescued = rescuing;
             _rescueProgress = Mathf.Clamp01(progress) * rescueDuration;
+            DoorOpen = doorOpen;
         }
     }
 }

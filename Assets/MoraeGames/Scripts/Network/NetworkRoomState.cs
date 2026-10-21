@@ -66,14 +66,13 @@ namespace MoraeGames.Network
         {
             if(!_manager.ConnectedClients.ContainsKey(sender))return;
             if(NetworkSessionManager.MatchStarted || IsLoading){SendState(sender,"경기 중에는 선택을 바꿀 수 없습니다");return;}
-            int cops=0,robbers=0;
-            foreach(var pair in Selections){if(pair.Key==sender)continue;if(pair.Value.Role==RoleManager.PlayerRole.Cop)cops++;else robbers++;}
-            // Unconfigured development/dedicated clients get a legal initial slot; explicit choices are never silently changed.
-            if(role==RoleManager.PlayerRole.None)role=cops<=robbers && cops<3?RoleManager.PlayerRole.Cop:RoleManager.PlayerRole.Robber;
+            int robbers=0;
+            foreach(var pair in Selections){if(pair.Key!=sender)robbers++;}
+            if(role==RoleManager.PlayerRole.None)role=RoleManager.PlayerRole.Robber;
             string error=null;
-            if(role!=RoleManager.PlayerRole.Cop && role!=RoleManager.PlayerRole.Robber)error="올바른 팀을 선택하세요";
-            else if(character<0 || character>=(role==RoleManager.PlayerRole.Cop?3:5))error="올바른 스킬을 선택하세요";
-            else if(role==RoleManager.PlayerRole.Cop?cops>=3:robbers>=5)error="선택한 팀이 가득 찼습니다. 다른 팀을 선택하세요";
+            if(role!=RoleManager.PlayerRole.Robber)error="도둑만 플레이할 수 있습니다. 경찰은 AI가 맡습니다";
+            else if(character<0 || character>=5)error="올바른 스킬을 선택하세요";
+            else if(robbers>=NetworkSessionManager.MaxPlayers)error="도둑 인원이 가득 찼습니다";
             if(error!=null)_errors[sender]=error;
             else{_errors.Remove(sender);Selections[sender]=new Selection{Role=role,Character=character};}
             Broadcast();
@@ -82,7 +81,7 @@ namespace MoraeGames.Network
         {
             if(_manager==null || !_manager.IsServer || IsLoading)return false;
             foreach(ulong id in _manager.ConnectedClientsIds)
-                if(!Selections.ContainsKey(id) || _errors.ContainsKey(id)){Status="모든 참가자의 팀·스킬 선택 확정을 기다리는 중";Revision++;return false;}
+                if(!Selections.ContainsKey(id) || _errors.ContainsKey(id)){Status="모든 도둑의 스킬 선택 확정을 기다리는 중";Revision++;return false;}
             return _manager.ConnectedClientsIds.Count>0;
         }
         public void LoadingStarted(){IsLoading=true;Broadcast();}
@@ -101,7 +100,7 @@ namespace MoraeGames.Network
         {
             if(_errors.TryGetValue(id,out var error))return error;
             if(Selections.TryGetValue(id,out var s))return $"확정: {(s.Role==RoleManager.PlayerRole.Cop?"경찰":"도둑")} · 스킬 {s.Character+1}";
-            return "팀과 스킬을 선택하세요";
+            return "도둑 스킬을 선택하세요";
         }
         private void Broadcast()
         {

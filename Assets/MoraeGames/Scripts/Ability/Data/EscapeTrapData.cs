@@ -35,6 +35,8 @@ namespace MoraeGames.Ability
             _radius = radius; _multiplier = multiplier;
             if (_ring == null) _ring = AbilityFeedback.CreateRing(gameObject, new Color(1, .55f, .08f));
             AbilityFeedback.DrawRing(_ring, transform.position + Vector3.up * .1f, radius);
+            if (GetComponent<MoraeGames.Game.LocalVisionSubject>() == null)
+                gameObject.AddComponent<MoraeGames.Game.LocalVisionSubject>();
         }
         private void Update()
         {

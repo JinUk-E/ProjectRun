@@ -24,13 +24,17 @@ namespace MoraeGames.UI
         private float _copSpeed;
         private string _timer;
         private bool _readySeen, _done;
+        private bool _vfxMode;
+        private int _vfxIndex, _vfxStep;
+        private AbilityHolder _vfxHolder;
+        private SkillVfx _lastVfx;
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
         {
-            if (!Environment.GetCommandLineArgs().Contains("--ui-flow")) return;
+            if (!Environment.GetCommandLineArgs().Contains("--ui-flow") && !Environment.GetCommandLineArgs().Contains("--skill-vfx")) return;
             Application.runInBackground = true;
             var bootstrap=FindFirstObjectByType<ServerBootstrap>();if(bootstrap!=null)bootstrap.enabled=false;
-            var obj=new GameObject("UIFlowProbe");DontDestroyOnLoad(obj);obj.AddComponent<UIFlowProbe>();
+            var obj=new GameObject("UIFlowProbe");DontDestroyOnLoad(obj);obj.AddComponent<UIFlowProbe>()._vfxMode=Environment.GetCommandLineArgs().Contains("--skill-vfx");
         }
         private void Start() { _started=Time.unscaledTime;_next=_started+1.5f;Application.logMessageReceived+=Log; }
         private void OnDestroy()=>Application.logMessageReceived-=Log;
@@ -49,6 +53,16 @@ namespace MoraeGames.UI
             {
                 var focus=HeistBuilding.NearestAlarm(_player.transform.position).transform.position;
                 camera.transform.position=focus+new Vector3(0,26,-18);camera.transform.LookAt(focus);
+            }
+            if(name.StartsWith("skill-"))
+            {
+                var focus=_player.transform.position;
+                camera.transform.position=focus+new Vector3(0,18,-14);camera.transform.LookAt(focus);
+            }
+            if(name.StartsWith("prison-"))
+            {
+                var focus=FindFirstObjectByType<PrisonZone>().transform.position;
+                camera.transform.position=focus+new Vector3(0,18,-17);camera.transform.LookAt(focus);
             }
             var canvases = FindObjectsByType<Canvas>(FindObjectsSortMode.None).Where(c => c.isRootCanvas && c.renderMode == RenderMode.ScreenSpaceOverlay).ToArray();
             foreach (var canvas in canvases) canvas.enabled = false;
@@ -106,17 +120,30 @@ namespace MoraeGames.UI
         private void Update()
         {
             if(_done)return;
-            if(Time.unscaledTime-_started>65) { Finish(false,"Timeout stage="+_stage);return; }
+            if(Time.unscaledTime-_started>90) { Finish(false,"Timeout stage="+_stage);return; }
             if(Time.unscaledTime<_next)return;
             try
             {
+                if(_vfxMode && _stage>=6) { RunVfxChecks(); return; }
                 switch(_stage)
                 {
                     case 0: Check(FindFirstObjectByType<MainMenuManager>()!=null,"Menu missing"); Shot("main");Advance();break;
                     case 1: FindObjectsByType<Button>(FindObjectsSortMode.None).First(b=>b.name=="StartButton").onClick.Invoke();Advance(1);break;
                     case 2:
                         var lobby=FindFirstObjectByType<LobbyManager>();Check(lobby!=null,"Menu button did not load Lobby");
-                        if (lobby.heroView != null) { Check(lobby.heroView.image.texture != null,"Lobby hero render missing"); Shot("lobby-cop"); }
+                        var lan=lobby.GetComponent<LanRoomPanel>();Check(lan!=null && lan.IsLan,"LAN entry missing");
+                        foreach(var bad in new[]{"","localhost","999.1.2.3","0.0.0.0","224.0.0.1","192.168.0.1:0","192.168.0.1:65536"})
+                            Check(!LanAddress.TryParse(bad,out _,out _),"Invalid LAN endpoint accepted: "+bad);
+                        Check(LanAddress.TryParse("192.168.0.10:7777",out _,out var port)&&port==7777,"Valid LAN endpoint rejected");
+                        lobby.joinCodeInput.text="bad-ip";
+                        Check(!FindObjectsByType<Button>(FindObjectsSortMode.None).First(b=>b.name=="JoinMatchButton").interactable,"Invalid endpoint join enabled");
+                        lan.ToggleMode();Check(!lan.IsLan,"Relay mode unavailable");
+                        lan.ToggleMode();Check(lan.IsLan,"LAN switch failed");lobby.joinCodeInput.text="";
+                        Check(RoleManager.Instance.GetRole("Player1")==RoleManager.PlayerRole.Robber,"Default role must be robber");
+                        lobby.SelectCopRole();
+                        Check(RoleManager.Instance.GetRole("Player1")==RoleManager.PlayerRole.Robber,"Legacy police selection bypassed robber mode");
+                        Check(!FindObjectsByType<Button>(FindObjectsSortMode.None).Any(b=>b.name=="CopButton"),"Police selection is still visible");
+                        if (lobby.heroView != null) { Check(lobby.heroView.image.texture != null,"Lobby hero render missing"); Shot("lobby-robber"); }
                         lobby.SelectRobberRole();lobby.SelectCharacter(4);
                         if (lobby.heroView != null) lobby.startMatchButton.GetComponent<ArcadeButtonFeedback>().OnPointerDown(null);
                         Advance();break;
@@ -138,6 +165,7 @@ namespace MoraeGames.UI
                         if(_game.IsReadyPhase) { if(!_readySeen) { Check(_hud.readyPanel.activeSelf,"Ready overlay missing");Shot("ready");_readySeen=true; } return; }
                         Check(_readySeen,"Countdown never displayed");
                         _player=PlayerController.Instances.OfType<RobberController>().First(p=>p.IsLocallyControlled);
+                        Check(!PlayerController.Instances.OfType<CopController>().Any(p=>p.IsLocallyControlled),"A human police character was spawned");
                         var vision=FindObjectsByType<FogOfWarCamera>(FindObjectsSortMode.None);
                         Check(vision.Length==1,"Gameplay vision mask missing");
                         Check(FindFirstObjectByType<MinimapController>().minimapImage.material.shader.name=="MoraeGames/MinimapVisionFog","Minimap vision mask missing");
@@ -192,9 +220,26 @@ namespace MoraeGames.UI
                         Check(_hud.DisplayedArrested>=1&&_hud.DisplayedPhase.Contains("체포됨"),"Arrest HUD did not update");
                         Check(_hud.lootFill.fillAmount>0,"Loot HUD did not update");Shot("arrested");
                         var prison=FindFirstObjectByType<PrisonZone>();var rescuer=PlayerController.Instances.OfType<RobberController>().First(p=>!p.IsArrested);
-                        Check(prison.TryStartRescue(rescuer.gameObject),"Rescue start failed");prison.UpdateRescue(prison.rescueDuration+.1f);Advance();break;
+                        Shot("prison-locked");
+                        rescuer.transform.position=prison.transform.position;
+                        Check(!prison.TryStartRescue(rescuer.gameObject),"Rescue from holding area must fail");
+                        rescuer.transform.position=prison.doorPoint.position-prison.doorPoint.forward;
+                        Check(!prison.TryStartRescue(rescuer.gameObject),"Rescue through inner face must fail");
+                        rescuer.transform.position=prison.InteractionPosition;
+                        Check(!prison.TryStartRescue(_player.gameObject),"Prisoner must not rescue themselves");
+                        Check(prison.TryStartRescue(rescuer.gameObject),"Door rescue start failed");
+                        prison.UpdateRescue(prison.rescueDuration*.5f);
+                        Check(prison.GetRescueProgress()>.4f,"Door progress missing");
+                        rescuer.transform.position=prison.transform.position+Vector3.right*8;
+                        prison.UpdateRescue(.1f);
+                        Check(!prison.IsBeingRescued && !prison.DoorOpen && prison.GetRescueProgress()==0,"Leaving door did not cancel rescue");
+                        rescuer.transform.position=prison.InteractionPosition;
+                        Physics.SyncTransforms();
+                        rescuer.ServerDriveInteraction(true,true);
+                        Check(prison.IsBeingRescued,"Door trigger did not accept action input");prison.UpdateRescue(prison.rescueDuration+.1f);
+                        Check(prison.DoorOpen && !prison.doorCollider.enabled,"Rescue did not unlock gate");Advance();break;
                     case 10:
-                        Check(!_player.IsArrested&&_hud.DisplayedPhase.Contains("도주"),"Rescue HUD did not update");Shot("rescued");_hud.pauseButton.onClick.Invoke();Advance();break;
+                        Check(!_player.IsArrested&&_hud.DisplayedPhase.Contains("도주"),"Rescue HUD did not update");Shot("rescued");Shot("prison-open");_hud.pauseButton.onClick.Invoke();Advance();break;
                     case 11: Check(_hud.pausePanel.activeSelf,"Pause not visible");Shot("pause");_hud.resumeButton.onClick.Invoke();Advance();break;
                     case 12: _hud.ShowResult(RoleManager.PlayerRole.Robber,"UI preview");Advance();break;
                     case 13: Check(_hud.resultPanel.activeSelf,"Result missing");Shot("result");Advance(15);break;
@@ -208,24 +253,90 @@ namespace MoraeGames.UI
                     case 16:
                         Check(SceneManager.GetActiveScene().name=="MainMenu" && !NetworkSessionManager.IsNetworked,"Offline exit did not return to menu");
                         FindFirstObjectByType<MainMenuManager>().LoadLobbyScene();Advance(1);break;
-                    case 17: Check(NetworkSessionManager.StartHost(),"Host restart failed");Advance();break;
-                    case 18: FindObjectsByType<Button>(FindObjectsSortMode.None).First(b=>b.name=="LeaveRoomButton").onClick.Invoke();Advance(1);break;
+                    case 17: FindFirstObjectByType<LobbyManager>().HostMatch();Check(NetworkSessionManager.Mode==NetworkSessionManager.SessionMode.Host,"LAN UI host failed");Advance();break;
+                    case 18:
+                        Shot("lan-host");
+                        string previousClipboard=GUIUtility.systemCopyBuffer;
+                        FindFirstObjectByType<LobbyManager>().HostMatch();
+                        bool copied=GUIUtility.systemCopyBuffer==NetworkSessionManager.CurrentLanEndpoint;
+                        GUIUtility.systemCopyBuffer=previousClipboard;
+                        Check(copied,"Host address copy failed");
+                        FindObjectsByType<Button>(FindObjectsSortMode.None).First(b=>b.name=="LeaveRoomButton").onClick.Invoke();Advance(1);break;
                     case 19:
                         Check(SceneManager.GetActiveScene().name=="MainMenu" && !NetworkSessionManager.IsNetworked && NetworkRoomState.Instance==null,"Online exit did not clear room");
                         Check(!Unity.Netcode.NetworkManager.Singleton.IsListening,"Transport still listening after exit");
                         FindFirstObjectByType<MainMenuManager>().LoadLobbyScene();Advance(1);break;
                     case 20: Check(NetworkSessionManager.StartHost(),"Host could not restart after leaving");Advance();break;
                     case 21:
+                        FindFirstObjectByType<LobbyManager>().JoinMatch();Advance(1);break;
+                    case 22:
+                        Check(!NetworkSessionManager.IsNetworked && !Unity.Netcode.NetworkManager.Singleton.IsListening,"Leave room did not stop transport");
+                        var retryLobby=FindFirstObjectByType<LobbyManager>();
+                        retryLobby.joinCodeInput.text="127.0.0.1:59999";retryLobby.JoinMatch();Advance(.2f);break;
+                    case 23:
+                        Check(!FindFirstObjectByType<LobbyManager>().startMatchButton.interactable,"Practice enabled while connecting");
+                        FindFirstObjectByType<LobbyManager>().JoinMatch();Advance(1);break;
+                    case 24:
+                        Check(!NetworkSessionManager.IsNetworked && !Unity.Netcode.NetworkManager.Singleton.IsListening,"Cancel left transport active");
+                        var timeoutLobby=FindFirstObjectByType<LobbyManager>();
+                        timeoutLobby.joinCodeInput.text="127.0.0.1:59999";timeoutLobby.JoinMatch();Advance(14);break;
+                    case 25:
+                        Check(!NetworkSessionManager.IsNetworked && !Unity.Netcode.NetworkManager.Singleton.IsListening,"Failed connection did not recover");
+                        var recovered=FindFirstObjectByType<LobbyManager>();
+                        Check(recovered.networkStatusText.text.Contains("연결"),"Connection failure explanation missing");
+                        Check(recovered.startMatchButton.interactable,"Practice did not recover after failure");
+                        recovered.HostMatch();Check(NetworkSessionManager.Mode==NetworkSessionManager.SessionMode.Host,"Host after failed join rejected");
+                        Advance();break;
+                    case 26:
                         FindFirstObjectByType<LobbyManager>().ExitToMainMenu();
-                        Finish(true,"UI/skills flow; building entry enforced; walls block sight; delayed alarm across cancelled attempts; alarm persists then expires; offline/host exit and restart. No progression awarded.");break;
+                        Finish(true,"LAN/Relay toggle, IP validation, LAN host UI/address copy, connection cancel/timeout/retry; UI/skills, prison rescue, offline/host exit and restart. No progression awarded.");break;
                 }
             }
             catch(Exception error) { Finish(false,error.ToString()); }
         }
+        private void RunVfxChecks()
+        {
+            if(_vfxHolder==null)
+            {
+                _vfxHolder=_player.GetComponent<AbilityHolder>();
+                if(UnityEngine.AI.NavMesh.SamplePosition(Vector3.zero,out var hit,5,UnityEngine.AI.NavMesh.AllAreas)) _player.transform.position=hit.position;
+            }
+            if(_vfxIndex>=5) { Finish(true,"Five Kenney skill styles render particles; smoke concealment preserved; pooled reuse clears particles and restores visibility; no shader/runtime errors."); return; }
+            if(_vfxStep==0)
+            {
+                _vfxHolder.Deactivate();
+                _vfxHolder.abilityData=_game.robberPrefabs[_vfxIndex].GetComponent<AbilityHolder>().abilityData;
+                typeof(AbilityHolder).GetField("cooldownTimer",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).SetValue(_vfxHolder,0f);
+                Check(_vfxHolder.TryActivate(),"VFX test activation rejected");
+                _lastVfx=_vfxHolder.VisualEffect;
+                Check(_lastVfx!=null,"Missing VFX for "+_vfxHolder.abilityData.name);
+                _vfxStep=1; _next=Time.unscaledTime+.35f; return;
+            }
+            if(_vfxStep==1)
+            {
+                Check(_lastVfx.ParticleCount>0,"No visible particles for "+_lastVfx.Style);
+                foreach(var renderer in _lastVfx.GetComponentsInChildren<ParticleSystemRenderer>())
+                    Check(renderer.sharedMaterial!=null && renderer.sharedMaterial.shader.isSupported && renderer.sharedMaterial.mainTexture!=null,"Missing particle texture/shader");
+                if(_vfxHolder.abilityData is SmokeBombData) Check(SmokeZoneBehavior.IsConcealed(_player.transform.position),"Smoke lost concealment");
+                Shot("skill-"+_lastVfx.Style);
+                var vision=_lastVfx.GetComponent<LocalVisionSubject>();
+                vision.SetHidden(true);
+                Check(_lastVfx.GetComponentsInChildren<Renderer>().All(r=>r.forceRenderingOff),"VFX leaks through fog");
+                _vfxHolder.Deactivate();
+                Check(!_lastVfx.gameObject.activeSelf && _lastVfx.ParticleCount==0,"Pooled VFX did not stop/clear");
+                if(_vfxHolder.abilityData is SmokeBombData) Check(!SmokeZoneBehavior.IsConcealed(_player.transform.position),"Smoke concealment leaked after release");
+                typeof(AbilityHolder).GetField("cooldownTimer",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).SetValue(_vfxHolder,0f);
+                Check(_vfxHolder.TryActivate(),"Pooled replay rejected");
+                Check(_vfxHolder.VisualEffect==_lastVfx,"Effect was not reused from pool");
+                _vfxStep=2; _next=Time.unscaledTime+.2f; return;
+            }
+            Check(_lastVfx.ParticleCount>0 && _lastVfx.GetComponentsInChildren<Renderer>().All(r=>!r.forceRenderingOff),"Pooled VFX did not restore visibility");
+            _vfxHolder.Deactivate(); _vfxIndex++; _vfxStep=0; _next=Time.unscaledTime+.1f;
+        }
         private void Finish(bool pass,string detail)
         {
             if(_done)return;_done=true;Time.timeScale=1;
-            File.WriteAllText("TestResults/ui-flow-"+Screen.width+".txt",(pass?"PASS: ":"FAIL: ")+detail);
+            File.WriteAllText("TestResults/"+(_vfxMode?"skill-vfx-":"ui-flow-")+Screen.width+".txt",(pass?"PASS: ":"FAIL: ")+detail);
             Application.Quit(pass?0:1);
         }
     }

@@ -176,7 +176,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "\uB3C4\uB451"
+  m_text: "\uB3C4\uB451 \uD611\uB3D9 \uBAA8\uB4DC"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 2d42ab5b0cf586746b4bc2bcdb722703, type: 2}
   m_sharedMaterial: {fileID: 989910611647176798, guid: 2d42ab5b0cf586746b4bc2bcdb722703, type: 2}
@@ -1492,7 +1492,7 @@ RectTransform:
   m_Father: {fileID: 358408341}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.025, y: 0.48}
-  m_AnchorMax: {x: 0.235, y: 0.62}
+  m_AnchorMax: {x: 0.235, y: 0.79}
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
@@ -1565,7 +1565,7 @@ MonoBehaviour:
     m_PressedTrigger: Pressed
     m_SelectedTrigger: Selected
     m_DisabledTrigger: Disabled
-  m_Interactable: 1
+  m_Interactable: 0
   m_TargetGraphic: {fileID: 198880917}
   m_OnClick:
     m_PersistentCalls:
@@ -2504,7 +2504,8 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "\uC5F0\uC2B5: AI\uC640 \uB300\uACB0   /   \uC628\uB77C\uC778: \uBC29 \uB9CC\uB4E4\uAE30\xB7\uCC38\uAC00"
+  m_text: "\uD63C\uC790 \uB610\uB294 \uD568\uAED8 \uB3C4\uB451\uC73C\uB85C \uD50C\uB808\uC774
+    \xB7 \uACBD\uCC30\uC740 AI"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 2d42ab5b0cf586746b4bc2bcdb722703, type: 2}
   m_sharedMaterial: {fileID: 989910611647176798, guid: 2d42ab5b0cf586746b4bc2bcdb722703, type: 2}
@@ -3678,7 +3679,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'Role: Not Selected'
+  m_text: "\uB3C4\uB451 \uD611\uB3D9 \xB7 \uC2A4\uD0AC\uC744 \uC120\uD0DD\uD558\uC138\uC694"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 2d42ab5b0cf586746b4bc2bcdb722703, type: 2}
   m_sharedMaterial: {fileID: 989910611647176798, guid: 2d42ab5b0cf586746b4bc2bcdb722703, type: 2}
@@ -4931,7 +4932,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &939731660
 RectTransform:
   m_ObjectHideFlags: 0
@@ -10325,7 +10326,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "01  \uD300 \uC120\uD0DD"
+  m_text: "01  \uB3C4\uB451 \uD611\uB3D9"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 2d42ab5b0cf586746b4bc2bcdb722703, type: 2}
   m_sharedMaterial: {fileID: 989910611647176798, guid: 2d42ab5b0cf586746b4bc2bcdb722703, type: 2}

@@ -35,6 +35,7 @@ namespace MoraeGames.Network
         private float[] _alarms;
         private bool[] _rescuing;
         private float[] _rescueProgress;
+        private bool[] _doorsOpen;
 
         public float ReadyCountdown => _readyCountdown.Value;
         public float RemainingTime => _remainingTime.Value;
@@ -119,8 +120,9 @@ namespace MoraeGames.Network
                 {
                     _rescuing[i] = _prisons[i].IsBeingRescued;
                     _rescueProgress[i] = _prisons[i].GetRescueProgress();
+                    _doorsOpen[i] = _prisons[i].DoorOpen;
                 }
-                InteractionSnapshotClientRpc(_looted, _robbing, _progress, _alarms, _rescuing, _rescueProgress);
+                InteractionSnapshotClientRpc(_looted, _robbing, _progress, _alarms, _rescuing, _rescueProgress, _doorsOpen);
             }
         }
 
@@ -148,11 +150,12 @@ namespace MoraeGames.Network
             _alarms = new float[_spots.Length];
             _rescuing = new bool[_prisons.Length];
             _rescueProgress = new float[_prisons.Length];
+            _doorsOpen = new bool[_prisons.Length];
         }
 
         [ClientRpc]
         private void InteractionSnapshotClientRpc(bool[] looted, bool[] robbing, float[] progress, float[] alarms,
-            bool[] rescuing, float[] rescueProgress)
+            bool[] rescuing, float[] rescueProgress, bool[] doorsOpen)
         {
             if (IsServer) return;
             CacheTargets();
@@ -163,7 +166,7 @@ namespace MoraeGames.Network
                 if (_spots[i].building != null) _spots[i].building.ApplyRemoteAlarm(alarms[i]);
             }
             for (int i = 0; i < _prisons.Length; i++)
-                _prisons[i].ApplyRemoteState(rescuing[i], rescueProgress[i]);
+                _prisons[i].ApplyRemoteState(rescuing[i], rescueProgress[i], doorsOpen[i]);
         }
 
         /// <summary>Server-side: relays host system messages to all clients.</summary>

@@ -1,0 +1,5 @@
+Kenney Particle Pack 1.1 (CC0)
+Source: https://kenney.nl/assets/particle-pack
+Downloaded: 2026-10-20
+Selected original transparent PNG textures. Unity particle behaviours and materials are customized for this game.
+The original license and credits are included in License.txt.

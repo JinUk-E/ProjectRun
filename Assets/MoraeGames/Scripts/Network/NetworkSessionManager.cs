@@ -48,8 +48,11 @@ namespace MoraeGames.Network
 
         /// <summary>Relay join code of the current hosted session (null for direct IP).</summary>
         public static string CurrentJoinCode { get; private set; }
+        public static string CurrentLanEndpoint { get; private set; }
+        public static string LastConnectionMessage { get; private set; }
 
-        public const int MaxPlayers = 8;
+        // Five human robber slots; the three police slots are reserved for AI.
+        public const int MaxPlayers = 5;
         public const ushort DefaultPort = 7777;
 
         private static NetworkManager _callbackManager;
@@ -64,6 +67,7 @@ namespace MoraeGames.Network
         /// </summary>
         public static async Task<string> StartHostWithRelayAsync(CancellationToken cancellationToken = default)
         {
+            if (IsNetworked || (NetworkManager.Singleton != null && NetworkManager.Singleton.ShutdownInProgress)) return null;
             int revision = ++_sessionRevision;
             NetworkManager nm = NetworkManager.Singleton;
             if (nm == null)
@@ -89,6 +93,8 @@ namespace MoraeGames.Network
                 if (!StartHostInternal(nm)) return null;
 
                 CurrentJoinCode = joinCode;
+                CurrentLanEndpoint = null;
+                LastConnectionMessage = null;
                 Debug.Log($"[NetworkSession] Relay host up. Join code: {joinCode}");
                 return joinCode;
             }
@@ -103,6 +109,7 @@ namespace MoraeGames.Network
         /// <summary>Joins a Relay session by join code.</summary>
         public static async Task<bool> StartClientWithRelayAsync(string joinCode, CancellationToken cancellationToken = default)
         {
+            if (IsNetworked || (NetworkManager.Singleton != null && NetworkManager.Singleton.ShutdownInProgress)) return false;
             int revision = ++_sessionRevision;
             NetworkManager nm = NetworkManager.Singleton;
             if (nm == null)
@@ -126,6 +133,9 @@ namespace MoraeGames.Network
                 if (!nm.StartClient()) return false;
 
                 Mode = SessionMode.Client;
+                CurrentJoinCode = joinCode;
+                CurrentLanEndpoint = null;
+                LastConnectionMessage = null;
                 NetworkRoomState.Initialize(nm);
                 Debug.Log($"[NetworkSession] Joining relay session {joinCode}...");
                 return true;
@@ -149,9 +159,10 @@ namespace MoraeGames.Network
         // ------------------------------------------------------------ Direct IP
 
         /// <summary>LAN/dev fallback: hosts on all interfaces without Relay.</summary>
-        public static bool StartHost()
+        public static bool StartHost(ushort port = DefaultPort)
         {
             NetworkManager nm = NetworkManager.Singleton;
+            if (port == 0 || IsNetworked || (nm != null && (nm.IsListening || nm.ShutdownInProgress))) return false;
             if (nm == null)
             {
                 Debug.LogError("[NetworkSession] No NetworkManager. Run 'MoraeGames/Setup Network Manager' first.");
@@ -160,12 +171,15 @@ namespace MoraeGames.Network
 
             var transport = nm.GetComponent<UnityTransport>();
             if (transport != null)
-                transport.SetConnectionData("0.0.0.0", DefaultPort, "0.0.0.0");
+                transport.SetConnectionData("127.0.0.1", port, "0.0.0.0");
 
             if (!StartHostInternal(nm)) return false;
 
             CurrentJoinCode = null;
-            Debug.Log($"[NetworkSession] Direct host up on port {DefaultPort}.");
+            var addresses = LanAddress.GetLocalAddresses();
+            CurrentLanEndpoint = addresses.Length > 0 ? addresses[0] + ":" + port : "127.0.0.1:" + port;
+            LastConnectionMessage = null;
+            Debug.Log($"[NetworkSession] Direct host up on port {port}.");
             return true;
         }
 
@@ -173,6 +187,8 @@ namespace MoraeGames.Network
         public static bool StartClient(string address)
         {
             NetworkManager nm = NetworkManager.Singleton;
+            if (!LanAddress.TryParse(address, out string ip, out ushort port) || IsNetworked ||
+                (nm != null && (nm.IsListening || nm.ShutdownInProgress))) return false;
             if (nm == null)
             {
                 Debug.LogError("[NetworkSession] No NetworkManager. Run 'MoraeGames/Setup Network Manager' first.");
@@ -181,12 +197,15 @@ namespace MoraeGames.Network
 
             var transport = nm.GetComponent<UnityTransport>();
             if (transport != null)
-                transport.SetConnectionData(address, DefaultPort);
+                transport.SetConnectionData(ip, port);
 
             RegisterCallbacks(nm);
             if (!nm.StartClient()) return false;
 
             Mode = SessionMode.Client;
+            CurrentJoinCode = null;
+            CurrentLanEndpoint = ip + ":" + port;
+            LastConnectionMessage = null;
             NetworkRoomState.Initialize(nm);
             Debug.Log($"[NetworkSession] Connecting to {address}:{DefaultPort}...");
             return true;
@@ -262,6 +281,7 @@ namespace MoraeGames.Network
             Mode = SessionMode.Offline;
             MatchStarted = false;
             CurrentJoinCode = null;
+            CurrentLanEndpoint = null;
         }
 
         private static bool StartHostInternal(NetworkManager nm)
@@ -300,9 +320,21 @@ namespace MoraeGames.Network
         private static void RegisterCallbacks(NetworkManager nm)
         {
             if (_callbackManager == nm) return;
-            if (_callbackManager != null) _callbackManager.OnClientDisconnectCallback -= OnClientDisconnect;
+            if (_callbackManager != null)
+            {
+                _callbackManager.OnClientDisconnectCallback -= OnClientDisconnect;
+                _callbackManager.OnTransportFailure -= OnTransportFailure;
+            }
             _callbackManager = nm;
             nm.OnClientDisconnectCallback += OnClientDisconnect;
+            nm.OnTransportFailure += OnTransportFailure;
+        }
+
+        private static void OnTransportFailure()
+        {
+            LastConnectionMessage = "네트워크를 시작할 수 없습니다. 포트 사용 여부와 네트워크 연결을 확인하세요.";
+            Shutdown();
+            SceneManager.LoadScene("Lobby");
         }
 
         private static void OnClientDisconnect(ulong clientId)
@@ -317,6 +349,10 @@ namespace MoraeGames.Network
                 Mode = SessionMode.Offline;
                 MatchStarted = false;
                 CurrentJoinCode = null;
+                CurrentLanEndpoint = null;
+                LastConnectionMessage = nm.DisconnectReason == "Match is full." ? "방 인원이 가득 찼습니다. 다른 방에 참가해 주세요."
+                    : nm.DisconnectReason == "Match already started." ? "이미 시작한 경기입니다. 다음 경기를 기다려 주세요."
+                    : "호스트와 연결할 수 없거나 연결이 끊겼습니다. 주소·같은 네트워크·방화벽을 확인하세요.";
                 NetworkRoomState.Close();
                 SceneManager.LoadScene("Lobby");
             }

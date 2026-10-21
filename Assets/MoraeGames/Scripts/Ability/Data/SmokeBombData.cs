@@ -18,9 +18,8 @@ namespace MoraeGames.Ability
             // Pooled smoke cloud (Rule §4: pooling mandatory for effects)
             GameObject smokeEffect = EffectPool.Get(PoolKey, CreateSmoke);
             smokeEffect.transform.position = holder.transform.position + Vector3.up * 0.5f;
-            smokeEffect.transform.localScale = Vector3.one * smokeRadius * 2f;
+            smokeEffect.transform.localScale = Vector3.one;
             smokeEffect.GetComponent<SmokeZoneBehavior>().Radius = smokeRadius;
-            RendererTint.SetColor(smokeEffect.GetComponent<Renderer>(), smokeColor);
 
             holder.spawnedObjects.Add(smokeEffect);
             Debug.Log($"[SmokeBomb] Deployed at {smokeEffect.transform.position}!");
@@ -36,14 +35,8 @@ namespace MoraeGames.Ability
 
         private static GameObject CreateSmoke()
         {
-            GameObject smokeEffect = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            smokeEffect.name = "SmokeBomb";
-            smokeEffect.GetComponent<Renderer>().sharedMaterial = Resources.Load<Material>("SmokeCloud");
-
-            Collider col = smokeEffect.GetComponent<Collider>();
-            col.isTrigger = true;
-            col.enabled = false;
-
+            // Concealment stays distance-based; pooled particles render the cloud separately.
+            GameObject smokeEffect = new GameObject("SmokeBomb");
             smokeEffect.AddComponent<SmokeZoneBehavior>();
             return smokeEffect;
         }

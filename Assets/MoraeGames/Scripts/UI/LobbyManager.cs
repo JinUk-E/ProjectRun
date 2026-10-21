@@ -45,6 +45,8 @@ namespace MoraeGames.UI
         private TMP_Text _startButtonLabel;
         private int _roomRevision = -1;
         private float _statusRefreshTimer;
+        private LanRoomPanel _lanPanel;
+        public bool NetworkBusy => _networkBusy;
 
         private static readonly Color SkillUnlockedColor = new Color(0.2f, 0.7f, 0.3f);
         private static readonly Color SkillAvailableColor = new Color(0.25f, 0.5f, 0.9f);
@@ -80,7 +82,7 @@ namespace MoraeGames.UI
         private void Start()
         {
             if (startMatchButton != null) _startButtonLabel = startMatchButton.GetComponentInChildren<TMP_Text>();
-            if (roleText != null) roleText.text = "경찰 또는 도둑을 선택하세요";
+            if (roleText != null) roleText.text = "도둑 협동 · 경찰은 AI가 맡습니다";
             if (startMatchButton != null) startMatchButton.interactable = false;
             if (characterSelectPanel != null) characterSelectPanel.SetActive(false);
             if (startNetworkMatchButton != null) startNetworkMatchButton.gameObject.SetActive(false);
@@ -92,11 +94,18 @@ namespace MoraeGames.UI
             if (room != null && manager != null && room.Selections.TryGetValue(manager.LocalClientId, out var selection))
             {
                 _restoringSelection = true;
-                if (selection.Role == RoleManager.PlayerRole.Cop) SelectCopRole(); else SelectRobberRole();
+                SelectRobberRole();
                 SelectCharacter(selection.Character);
                 _restoringSelection = false;
             }
-            else if (heroView != null) SelectCopRole();
+            else SelectRobberRole();
+            _lanPanel = gameObject.AddComponent<LanRoomPanel>();
+            _lanPanel.Initialize(this);
+            // Also cover older scene versions that still have serialized team buttons.
+            foreach (var button in startMatchButton.transform.root.GetComponentsInChildren<Button>(true))
+                for (int i = 0; i < button.onClick.GetPersistentEventCount(); i++)
+                    if (button.onClick.GetPersistentTarget(i) == this && button.onClick.GetPersistentMethodName(i) == nameof(SelectCopRole))
+                        button.gameObject.SetActive(false);
         }
 
         /// <summary>Leaves the room, cancels pending connections, and returns to the main menu.</summary>
@@ -120,6 +129,7 @@ namespace MoraeGames.UI
                 return;
             }
             if (!NetworkSessionManager.IsNetworked) return;
+            if (Unity.Netcode.NetworkManager.Singleton == null || !Unity.Netcode.NetworkManager.Singleton.IsConnectedClient) return;
             _statusRefreshTimer -= Time.unscaledDeltaTime;
             if (_statusRefreshTimer > 0) return;
             _statusRefreshTimer = .2f;
@@ -136,8 +146,8 @@ namespace MoraeGames.UI
             }
             if (networkStatusText != null && room != null)
             {
-                string code = NetworkSessionManager.CurrentJoinCode ?? "온라인";
-                networkStatusText.text = $"방 {code} · 선택 확정 {room.Selections.Count}/8명\n{room.Status}";
+                string code = NetworkSessionManager.CurrentJoinCode ?? NetworkSessionManager.CurrentLanEndpoint ?? "온라인";
+                networkStatusText.text = $"방 {code} · 도둑 {room.Selections.Count}/{NetworkSessionManager.MaxPlayers}명 · 경찰 AI\n{room.Status}";
             }
         }
         /// <summary>Unlocks the skill at the given index (wired to skill buttons).</summary>
@@ -185,13 +195,8 @@ namespace MoraeGames.UI
 
         public void SelectCopRole()
         {
-            Debug.Log("[LobbyManager] SelectCopRole called.");
-            currentRole = RoleManager.PlayerRole.Cop;
-            if (RoleManager.Instance != null)
-                RoleManager.Instance.AssignRole("Player1", RoleManager.PlayerRole.Cop);
-
-            if (roleText != null) roleText.text = "경찰 · 도둑을 모두 체포하세요";
-            ShowCharacterSelection();
+            // Compatibility with old scene callbacks: human players are always robbers.
+            SelectRobberRole();
         }
 
         public void SelectRobberRole()
@@ -201,7 +206,7 @@ namespace MoraeGames.UI
             if (RoleManager.Instance != null)
                 RoleManager.Instance.AssignRole("Player1", RoleManager.PlayerRole.Robber);
 
-            if (roleText != null) roleText.text = "도둑 · 탈취하고 동료를 구하세요";
+            if (roleText != null) roleText.text = "도둑 협동 · AI 경찰을 피해 탈취하고 동료를 구하세요";
             ShowCharacterSelection();
         }
 
@@ -244,6 +249,7 @@ namespace MoraeGames.UI
 
         public void SelectCharacter(int index)
         {
+            index = Mathf.Clamp(index, 0, RobberNames.Length - 1);
             selectedCharacterIndex = index;
 
             if (RoleManager.Instance != null)
@@ -297,6 +303,7 @@ namespace MoraeGames.UI
         /// <summary>Creates a Relay session; an outage must not silently become a local-only game.</summary>
         public async void HostMatch()
         {
+            if (_lanPanel != null && _lanPanel.HandleHost()) return;
             if (_isLeaving || _networkBusy || NetworkSessionManager.IsNetworked) return;
             _networkBusy = true;
             try
@@ -305,7 +312,7 @@ namespace MoraeGames.UI
                 string code = await NetworkSessionManager.StartHostWithRelayAsync(destroyCancellationToken);
                 if (this == null || _isLeaving) return;
                 if (code == null) { SetNetworkStatus("Could not create room. Check your connection and retry."); return; }
-                SetNetworkStatus($"참가 코드: {code} · 선택한 팀과 스킬을 서버에서 확인합니다");
+                SetNetworkStatus($"참가 코드: {code} · 도둑 협동 · 스킬 선택을 서버에서 확인합니다");
                 if (startNetworkMatchButton != null) startNetworkMatchButton.gameObject.SetActive(true);
             }
             finally { _networkBusy = false; }
@@ -314,6 +321,7 @@ namespace MoraeGames.UI
         /// <summary>Starts connecting; only IsConnectedClient confirms a completed connection.</summary>
         public async void JoinMatch()
         {
+            if (_lanPanel != null && _lanPanel.HandleJoin()) return;
             if (_isLeaving || _networkBusy || NetworkSessionManager.IsNetworked) return;
             string code = joinCodeInput != null ? joinCodeInput.text.Trim() : "";
             if (string.IsNullOrEmpty(code)) { SetNetworkStatus("Enter the host's room code."); return; }

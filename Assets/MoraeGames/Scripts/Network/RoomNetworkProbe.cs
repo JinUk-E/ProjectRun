@@ -24,6 +24,9 @@ namespace MoraeGames.Network
         private InGameUIManager _hud;
         private string _report;
         private HeistBuilding _alarmBuilding;
+        private PrisonZone _prison;
+        private bool _doorStarted, _doorCompleted, _doorProgressSeen;
+        private bool _lanUi, _connectionRequested;
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
         {
@@ -35,7 +38,9 @@ namespace MoraeGames.Network
         private void Start()
         {
             _started=Time.unscaledTime;_report="TestResults/room-peer-"+_peer+".txt";Application.logMessageReceived+=OnLog;
-            RoleManager.Instance.AssignRole("Player1",RoleManager.PlayerRole.Cop);
+            _lanUi=Environment.GetCommandLineArgs().Contains("--lan-ui-room");
+            if(_lanUi) { SceneManager.LoadScene("Lobby"); return; }
+            RoleManager.Instance.AssignRole("Player1",RoleManager.PlayerRole.Robber);
             RoleManager.Instance.SelectCharacter("Player1",_peer==0?2:_peer==1?0:1);
             if(!(_peer==0?NetworkSessionManager.StartHost():NetworkSessionManager.StartClient("127.0.0.1")))Finish(false,"Connect failed");
         }
@@ -48,6 +53,16 @@ namespace MoraeGames.Network
             if(Time.unscaledTime-_started>100){Finish(false,"Timeout stage="+_stage+" round="+_round+" status="+NetworkRoomState.Instance?.Status);return;}
             try
             {
+                if(_lanUi && !_connectionRequested)
+                {
+                    var lobby=FindFirstObjectByType<LobbyManager>();
+                    if(lobby==null || lobby.GetComponent<LanRoomPanel>()==null || Time.unscaledTime-_started<1) return;
+                    lobby.SelectCharacter(_peer==0?2:_peer==1?0:1);
+                    if(_peer==0) lobby.HostMatch();
+                    else { lobby.joinCodeInput.text="127.0.0.1:7777"; lobby.JoinMatch(); }
+                    Check(NetworkSessionManager.IsNetworked,"LAN lobby UI did not start connection");
+                    _connectionRequested=true;
+                }
                 var nm=NetworkManager.Singleton;var room=NetworkRoomState.Instance;if(room==null || !nm.IsConnectedClient)return;
                 if(_stage==1 && SceneManager.GetActiveScene().name=="Lobby"){_stage=2;_lobbyAt=Time.unscaledTime;return;}
                 if(_stage==2 && SceneManager.GetActiveScene().name=="InGame"){_round=2;_stage=3;_playing=-1;_ended=false;_pinged=false;return;}
@@ -56,11 +71,13 @@ namespace MoraeGames.Network
                     _id=nm.LocalClientId;
                     if(_peer==2)
                     {
-                        if(_validation==0 && room.Selections.ContainsKey(_id)){room.Submit(RoleManager.PlayerRole.Cop,99);_validation=1;return;}
-                        if(_validation==1 && room.Status.Contains("올바른 스킬")){room.Submit(RoleManager.PlayerRole.Cop,1);_validation=2;}
+                        if(_validation==0 && room.Selections.ContainsKey(_id)){room.Submit(RoleManager.PlayerRole.Robber,99);_validation=1;return;}
+                        if(_validation==1 && room.Status.Contains("올바른 스킬")){room.Submit(RoleManager.PlayerRole.Robber,1);_validation=2;}
                     }
-                    if(_peer==3 && _validation==0 && room.Status.Contains("가득")){room.Submit(RoleManager.PlayerRole.Robber,4);_validation=2;}
-                    if(_peer==0 && nm.ConnectedClientsIds.Count==4 && room.Selections.Count==4 && Time.unscaledTime-_started>8)NetworkSessionManager.BeginMatch();
+                    if(_peer==3 && _validation==0 && room.Selections.ContainsKey(_id)){room.Submit(RoleManager.PlayerRole.Cop,0);_validation=1;return;}
+                    if(_peer==3 && _validation==1 && room.Status.Contains("도둑만")){room.Submit(RoleManager.PlayerRole.Robber,4);_validation=2;}
+                    // Wait for the last peer's rejection/reselection round-trip before starting.
+                    if(_peer==0 && nm.ConnectedClientsIds.Count==4 && room.Selections.Count==4 && room.Selections.Values.Any(s=>s.Character==4) && Time.unscaledTime-_started>8)NetworkSessionManager.BeginMatch();
                     if(SceneManager.GetActiveScene().name=="InGame")_stage=1;
                     return;
                 }
@@ -72,29 +89,50 @@ namespace MoraeGames.Network
                         _playing=Time.unscaledTime;
                         _alarmBuilding=HeistBuilding.Instances.First(b=>b.guarded);
                         Check(!_alarmBuilding.AlarmActive,"Alarm leaked across rounds");
+                        _prison=FindFirstObjectByType<PrisonZone>();
+                        Check(!_prison.DoorOpen,"Prison gate state leaked across rounds");
+                        _doorStarted=_doorCompleted=_doorProgressSeen=false;
                         foreach(var ai in FindObjectsByType<AIController>(FindObjectsSortMode.None))ai.enabled=false;
                         foreach(var agent in FindObjectsByType<UnityEngine.AI.NavMeshAgent>(FindObjectsSortMode.None))if(agent.enabled && agent.isOnNavMesh)agent.isStopped=true;
                         _player=PlayerController.Instances.First(p=>p.IsLocallyControlled);_hud=FindFirstObjectByType<InGameUIManager>();
                         Check(nm.LocalClientId==_id,"Client identity changed");
-                        bool robber=_peer==3 || (_round==2 && _peer==0);Check((_player is RobberController)==robber,"Chosen role not spawned");
+                        Check(_player is RobberController,"Human must spawn as robber");
+                        Check(PlayerController.Instances.OfType<CopController>().All(p=>!p.IsLocallyControlled),"Human police spawned");
+                        Check(room.Selections.Values.All(s=>s.Role==RoleManager.PlayerRole.Robber),"Server accepted a police player");
                         var skill=_player.GetComponent<AbilityHolder>().abilityData;
-                        Check(_peer==0?(_round==1?skill is CCProjectileData:skill is DecoyCloneData):_peer==1?skill is SpeedBoostData:_peer==2?skill is AreaScanData:skill is EscapeTrapData,"Chosen skill not spawned");
+                        Check(_peer==0?(_round==1?skill is DisguiseData:skill is DecoyCloneData):_peer==1?skill is SpeedBurstData:_peer==2?skill is SmokeBombData:skill is EscapeTrapData,"Chosen skill not spawned: peer="+_peer+" round="+_round+" skill="+skill?.GetType().Name);
                         Check(PingSystem.Instance.ReceivedPingCount==0,"Ping state leaked from previous round");
                     }
                     float elapsed=Time.unscaledTime-_playing;
                     if(_peer==0 && elapsed>2 && !_alarmBuilding.AlarmActive)_alarmBuilding.RecordTampering(2);
+                    if(_peer==0 && elapsed>2.4f && !_doorStarted)
+                    {
+                        var prisoner=PlayerController.Instances.OfType<RobberController>().First(p=>p.GetComponent<NetworkCharacter>().IsAiControlled);
+                        prisoner.OnArrested();
+                        _player.transform.position=_prison.InteractionPosition;
+                        _player.GetComponent<Rigidbody>().position=_prison.InteractionPosition;
+                        _player.GetComponent<OwnerNetworkTransform>().TeleportOnAuthority(_prison.InteractionPosition);
+                        Check(_prison.TryStartRescue(_player.gameObject),"Host door rescue rejected");
+                        _prison.UpdateRescue(_prison.rescueDuration*.5f); _doorStarted=true;
+                    }
+                    if(_prison.GetRescueProgress()>.1f) _doorProgressSeen=true;
+                    if(_peer==0 && elapsed>3.6f && !_doorCompleted)
+                    {
+                        _prison.UpdateRescue(_prison.rescueDuration); _doorCompleted=true;
+                    }
                     if(!_pinged && elapsed>1 && (_peer==0 || (_round==1 && _peer==1 && elapsed>2)))
                     {
                         if(_peer==0 || _peer==1){PingSystem.Instance.CreatePing();PingSystem.Instance.CreatePing();_pinged=true;}
                     }
                     if(elapsed>4)
                     {
+                        Check(_doorProgressSeen && (elapsed>=6 || _prison.DoorOpen) && !_prison.HasArrestedRobbers(),"Door progress/open/rescue state did not replicate: elapsed="+elapsed+" progressSeen="+_doorProgressSeen+" open="+_prison.DoorOpen);
                         Check(_alarmBuilding.AlarmActive && _alarmBuilding.AlarmRemaining>0,"Alarm timer was not replicated");
-                        int expected=_round==1?(_peer==3?0:2):(_peer==0 || _peer==3?1:0);
+                        int expected=_round==1?2:1;
                         Check(PingSystem.Instance.ReceivedPingCount==expected,"Team ping or spam limit mismatch: "+PingSystem.Instance.ReceivedPingCount+" expected="+expected);
                         if(_peer>=2)Check(_validation==2,"Selection rejection was not verified");
                     }
-                    if(_round==2 && elapsed>(_peer==0?6:5)){Finish(true,"Confirmed chosen role/skill, invalid selection/team capacity rejection, teammate-only pings + rate limit, same client identity and changed loadout across two rounds; no progression awarded.");return;}
+                    if(_round==2 && elapsed>(_peer==0?6:5)){Finish(true,"Four robbers; rejected police/invalid skill; cooperative pings; door rescue progress, opening and release replicated; gate reset and changed skill across two rounds. No progression awarded.");return;}
                     if(_round==1 && elapsed>6 && !_ended)
                     {
                         // Enter a controlled result state without touching user progression saves.

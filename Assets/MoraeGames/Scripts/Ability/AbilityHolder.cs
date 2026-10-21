@@ -32,6 +32,8 @@ namespace MoraeGames.Ability
 
         // Cached sibling for networked activation replay (null in offline prefabs is fine)
         private NetworkCharacter _networkCharacter;
+        private SkillVfx _visualEffect;
+        public SkillVfx VisualEffect => _visualEffect;
 
         private void Awake()
         {
@@ -85,6 +87,7 @@ namespace MoraeGames.Ability
             activeTimer = abilityData.duration;
             cooldownTimer = GetEffectiveCooldown();
             abilityData.OnActivate(this);
+            _visualEffect = SkillVfx.Play(this);
             Debug.Log($"[Ability] {abilityData.abilityName} activated! Duration: {abilityData.duration}s");
         }
 
@@ -94,6 +97,7 @@ namespace MoraeGames.Ability
             isActive = false;
             activeTimer = 0f;
             abilityData.OnDeactivate(this);
+            if (_visualEffect != null) { _visualEffect.Release(); _visualEffect = null; }
             Debug.Log($"[Ability] {abilityData.abilityName} deactivated.");
         }
 

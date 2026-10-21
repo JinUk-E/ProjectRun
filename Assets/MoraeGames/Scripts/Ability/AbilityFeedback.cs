@@ -5,6 +5,7 @@ using MoraeGames.Network;
 namespace MoraeGames.Ability
 {
     /// <summary>Reusable per-character skill ring; never affects authoritative collisions.</summary>
+    [DefaultExecutionOrder(250)]
     public sealed class AbilityFeedback : MonoBehaviour
     {
         private static Material _material;
@@ -12,6 +13,8 @@ namespace MoraeGames.Ability
         private NetworkCharacter _network;
         private LineRenderer _ring;
         private float _elapsed;
+        private MoraeGames.Game.LocalVisionSubject _vision;
+        private void Start() => _vision = GetComponent<MoraeGames.Game.LocalVisionSubject>();
         private void Awake()
         {
             _holder = GetComponent<AbilityHolder>(); _network = GetComponent<NetworkCharacter>();
@@ -35,7 +38,7 @@ namespace MoraeGames.Ability
         }
         private void LateUpdate()
         {
-            bool active = _holder != null && _holder.IsActive;
+            bool active = _holder != null && _holder.IsActive && _holder.VisualEffect == null && (_vision == null || !_vision.Hidden);
             _ring.enabled = active;
             if (!active) { _elapsed = 0; return; }
             _elapsed += Time.deltaTime;

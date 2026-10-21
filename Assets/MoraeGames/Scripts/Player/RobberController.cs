@@ -157,7 +157,8 @@ namespace MoraeGames.Player
                 }
 
                 // Check for prison zone (rescue)
-                PrisonZone prison = _overlapBuffer[i].GetComponent<PrisonZone>();
+                var door = _overlapBuffer[i].GetComponent<PrisonDoorInteraction>();
+                PrisonZone prison = door != null ? door.prison : null;
                 if (prison != null && prison.TryStartRescue(gameObject))
                 {
                     _currentPrisonZone = prison;
@@ -185,8 +186,7 @@ namespace MoraeGames.Player
             }
             else if (_currentPrisonZone != null)
             {
-                float dist = Vector3.Distance(transform.position, _currentPrisonZone.transform.position);
-                if (dist > GameConstants.PrisonZoneRadius * 1.5f)
+                if (!_currentPrisonZone.CanInteract(this))
                 {
                     CancelCurrentInteraction();
                     return;
@@ -231,7 +231,7 @@ namespace MoraeGames.Player
             PrisonHelper.TeleportToPrison(transform, rb);
 
             if (GameManager.Instance != null)
-                GameManager.Instance.BroadcastSystemMessage("도둑 체포! 감옥에서 동료를 구출할 수 있어요", Color.cyan);
+                GameManager.Instance.BroadcastSystemMessage("도둑 체포! 감옥 문 앞에서 행동 버튼을 길게 눌러 구출하세요", Color.cyan);
 
             Debug.Log($"[RobberController] {gameObject.name} arrested and moved to prison.");
         }

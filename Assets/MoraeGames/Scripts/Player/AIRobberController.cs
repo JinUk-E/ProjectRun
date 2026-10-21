@@ -166,8 +166,7 @@ namespace MoraeGames.Player
             // Try to rescue teammates (using cached PrisonZone)
             if (_prisonZone != null && _prisonZone.HasArrestedRobbers() && !_prisonZone.IsBeingRescued)
             {
-                float dist = Vector3.Distance(transform.position, _prisonZone.transform.position);
-                if (dist <= GameConstants.PrisonZoneRadius)
+                if (_prisonZone.CanInteract(_robberController))
                 {
                     if (_prisonZone.TryStartRescue(gameObject))
                     {
@@ -188,7 +187,7 @@ namespace MoraeGames.Player
                         if (Random.value < GameConstants.RobberRescueAttemptChance)
                         {
                             _movingToPrison = true;
-                            MoveTo(_prisonZone.transform.position);
+                            MoveTo(_prisonZone.InteractionPosition);
                             return;
                         }
                     }
@@ -207,8 +206,7 @@ namespace MoraeGames.Player
                 return;
             }
 
-            float dist = Vector3.Distance(transform.position, _prisonZone.transform.position);
-            if (dist <= GameConstants.PrisonZoneRadius)
+            if (_prisonZone.CanInteract(_robberController))
             {
                 _movingToPrison = false;
                 if (_prisonZone.TryStartRescue(gameObject))
@@ -220,7 +218,7 @@ namespace MoraeGames.Player
             }
             else
             {
-                MoveTo(_prisonZone.transform.position);
+                MoveTo(_prisonZone.InteractionPosition);
             }
         }
 
@@ -259,8 +257,7 @@ namespace MoraeGames.Player
                 return;
             }
 
-            float dist = Vector3.Distance(transform.position, _targetPrison.transform.position);
-            if (dist > GameConstants.PrisonZoneRadius * 1.5f)
+            if (!_targetPrison.CanInteract(_robberController))
             {
                 _targetPrison.CancelRescue();
                 _isRescuing = false;
