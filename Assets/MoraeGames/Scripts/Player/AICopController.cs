@@ -11,6 +11,32 @@ namespace MoraeGames.Player
     /// </summary>
     public class AICopController : AIController
     {
+        public enum PursuitState : byte { Clear, Searching, Chasing }
+        private static readonly System.Collections.Generic.List<AICopController> ActiveCops = new();
+        private Transform _lastTrackedTarget;
+
+        private void OnEnable() => ActiveCops.Add(this);
+        private void OnDisable()
+        {
+            ActiveCops.Remove(this);
+            _currentTarget = _lastTrackedTarget = null;
+            _lastSeenAt = -100;
+        }
+
+        /// <summary>Reports actual AI attention toward one robber, without revealing police positions.</summary>
+        public static PursuitState GetPursuitState(RobberController robber)
+        {
+            if (robber == null || robber.IsArrested) return PursuitState.Clear;
+            var result = PursuitState.Clear;
+            foreach (var cop in ActiveCops)
+            {
+                if (cop.IsLocalPlayer) continue;
+                if (cop._currentTarget == robber.transform) return PursuitState.Chasing;
+                if (cop._currentTarget == null && cop._lastTrackedTarget == robber.transform &&
+                    Time.time - cop._lastSeenAt < cop.searchMemorySeconds) result = PursuitState.Searching;
+            }
+            return result;
+        }
         [Header("Cop Specific AI Stats")]
         public float detectionRadius = GameConstants.CopDetectionRadius;
         public float arrestRange = GameConstants.CopArrestRange;
@@ -152,6 +178,7 @@ namespace MoraeGames.Player
             if (nearestRobber != null)
             {
                 _currentTarget = nearestRobber;
+                _lastTrackedTarget = nearestRobber;
                 _lastKnownPosition = nearestRobber.position;
                 _lastSeenAt = Time.time;
                 _searchStep = 0;

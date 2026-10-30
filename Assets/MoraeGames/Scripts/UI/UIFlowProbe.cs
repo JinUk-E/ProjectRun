@@ -180,6 +180,7 @@ namespace MoraeGames.UI
                             Check(!landmark.loot.GetComponent<Renderer>().forceRenderingOff,"Static loot landmark hidden");
                         Check(_hud.timerText.text!=_timer,"Timer UI did not update");
                         Check(_hud.roleText.text.Contains("도둑")&&_hud.DisplayedPhase.Contains("도주"),"Role/phase missing");
+                        CheckPursuitGuidance();
                         var ability=_player.GetComponent<AbilityHolder>();Check(ability.abilityData is EscapeTrapData,"New trap was not selected");Check(ability.TryActivate(),"Skill activation failed");
                         _cop=PlayerController.Instances.OfType<CopController>().First();_copSpeed=_cop.moveSpeed;
                         _cop.GetComponent<UnityEngine.AI.NavMeshAgent>().enabled=false;
@@ -289,11 +290,35 @@ namespace MoraeGames.UI
                         Advance();break;
                     case 26:
                         FindFirstObjectByType<LobbyManager>().ExitToMainMenu();
-                        Finish(true,"LAN/Relay toggle, IP validation, LAN host UI/address copy, connection cancel/timeout/retry; UI/skills, prison rescue, offline/host exit and restart. No progression awarded.");break;
+                        Finish(true,"Chase/search/clear HUD and target attribution; LAN/Relay toggle, IP validation, host/address copy, cancel/timeout/retry; UI/skills, prison rescue and room exit/restart. No progression awarded.");break;
                 }
             }
             catch(Exception error) { Finish(false,error.ToString()); }
         }
+        private void CheckPursuitGuidance()
+        {
+            var cop = FindFirstObjectByType<AICopController>();
+            var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            var target = typeof(AICopController).GetField("_currentTarget", flags);
+            var tracked = typeof(AICopController).GetField("_lastTrackedTarget", flags);
+            var seen = typeof(AICopController).GetField("_lastSeenAt", flags);
+            var refresh = typeof(InGameUIManager).GetMethod("UpdatePursuitGuidance", flags);
+            cop.enabled = true;
+            try
+            {
+                target.SetValue(cop, _player.transform); tracked.SetValue(cop, _player.transform); seen.SetValue(cop, Time.time);
+                Check(AICopController.GetPursuitState(_player) == AICopController.PursuitState.Chasing, "Pursuit not attributed to target");
+                var teammate = PlayerController.Instances.OfType<RobberController>().First(p => p != _player);
+                Check(AICopController.GetPursuitState(teammate) == AICopController.PursuitState.Clear, "Teammate inherited another player's pursuit");
+                refresh.Invoke(_hud, null); Check(_hud.DisplayedPhase.Contains("추격 중"), "Chase HUD missing"); Shot("pursuit-chase");
+                target.SetValue(cop, null);
+                refresh.Invoke(_hud, null); Check(_hud.DisplayedPhase.Contains("수색 중"), "Search HUD missing"); Shot("pursuit-search");
+                seen.SetValue(cop, Time.time - cop.searchMemorySeconds - 1);
+                refresh.Invoke(_hud, null); Check(_hud.DisplayedPhase.Contains("추격 해제"), "Escape HUD missing"); Shot("pursuit-clear");
+            }
+            finally { cop.enabled = false; }
+        }
+
         private void RunVfxChecks()
         {
             if(_vfxHolder==null)

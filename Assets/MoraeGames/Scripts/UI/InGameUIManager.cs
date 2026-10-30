@@ -54,6 +54,11 @@ namespace MoraeGames.UI
         private RobberController _localRobber;
         private int _lastPhase = -1;
         private float _goUntil;
+        private NetworkCharacter _localNetworkCharacter;
+        private AICopController.PursuitState _lastPursuit;
+        private float _escapedUntil;
+        private int _lastGuidance = -1;
+        private TMP_Text _guidanceText;
 
         [Header("Pause")]
         public Button pauseButton;
@@ -91,6 +96,25 @@ namespace MoraeGames.UI
         {
             _inGameManager = FindFirstObjectByType<InGameManager>();
             _lootManager = FindFirstObjectByType<LootManager>();
+            if (phaseText != null)
+            {
+                var plate = new GameObject("SituationalGuide", typeof(RectTransform), typeof(Image));
+                plate.transform.SetParent(phaseText.transform.parent, false);
+                var rect = (RectTransform)plate.transform;
+                rect.anchorMin = new Vector2(.32f, .745f); rect.anchorMax = new Vector2(.70f, .81f);
+                rect.offsetMin = rect.offsetMax = Vector2.zero;
+                var background = plate.GetComponent<Image>(); background.color = new Color(.015f, .035f, .09f, .88f); background.raycastTarget = false;
+                var label = new GameObject("Hint", typeof(RectTransform), typeof(TextMeshProUGUI));
+                label.transform.SetParent(plate.transform, false);
+                _guidanceText = label.GetComponent<TMP_Text>();
+                _guidanceText.font = phaseText.font; _guidanceText.fontSize = 38;
+                _guidanceText.enableAutoSizing = true; _guidanceText.fontSizeMin = 24; _guidanceText.fontSizeMax = 38;
+                _guidanceText.alignment = TextAlignmentOptions.Center; _guidanceText.raycastTarget = false;
+                _guidanceText.SetText("건물 안 보석 앞에서 F / 행동 유지 · Q / 스킬\n전리품 {0}% 확보 또는 시간 종료까지 팀 생존", GameConstants.LootWinThreshold * 100);
+                var lr = (RectTransform)label.transform; lr.anchorMin = new Vector2(.025f, .05f); lr.anchorMax = new Vector2(.975f, .95f);
+                lr.offsetMin = lr.offsetMax = Vector2.zero;
+                plate.transform.SetSiblingIndex(phaseText.transform.GetSiblingIndex());
+            }
             if (resultPanel != null)
                 resultPanel.SetActive(false);
             if (NetworkSessionManager.IsNetworked && resultPanel != null)
@@ -194,11 +218,16 @@ namespace MoraeGames.UI
                         _localPlayer = pc;
                         _localPlayerAbility = pc.GetComponent<AbilityHolder>();
                         _localRobber = pc as RobberController;
+                        _localNetworkCharacter = pc.GetComponent<NetworkCharacter>();
                         bool cop = pc is CopController;
                         if (roleText != null) roleText.text = cop ? "경찰 · 추격팀" : "도둑 · 도주팀";
                         if (objectiveText != null) objectiveText.text = cop ? "도둑을 모두 체포하세요 · 가까이 접근해 체포" : "전리품을 훔치거나 제한 시간까지 살아남으세요";
                         if (readyRoleText != null) readyRoleText.text = cop ? "당신은 경찰!" : "당신은 도둑!";
-                        if (readyHintText != null) readyHintText.text = cop ? "도둑에게 접근 → 자동 체포\nQ 스킬로 도주로를 차단하세요" : "경찰을 피해 이동 → F를 눌러 전리품 탈취\n감옥에서 F를 누르고 있으면 동료를 구출합니다";
+                        if (readyHintText != null)
+                        {
+                            if (cop) readyHintText.text = "도둑에게 접근 → 자동 체포\nQ 스킬로 도주로를 차단하세요";
+                            else readyHintText.SetText("승리: 전리품 {0}% 확보 또는 시간 종료까지 팀 생존\n건물 안 보석 앞에서 F / 행동 길게 누르기\n구출: 감옥 정문 밖에서 F / 행동 길게 누르기", GameConstants.LootWinThreshold * 100);
+                        }
                         if (skillNameText != null) skillNameText.text = AbilityPresentation.Name(_localPlayerAbility != null ? _localPlayerAbility.abilityData : null);
                         if (skillHintText != null) skillHintText.text = AbilityPresentation.Description(_localPlayerAbility != null ? _localPlayerAbility.abilityData : null);
                         if (skillIcon != null && _localPlayerAbility != null) skillIcon.SetSymbol(AbilityPresentation.Symbol(_localPlayerAbility.abilityData));
@@ -213,6 +242,7 @@ namespace MoraeGames.UI
             UpdateTimerUI();
             UpdateLootUI();
             UpdateArrestCountUI();
+            UpdatePursuitGuidance();
             UpdateAbilityUI();
 
             // Ready countdown display
@@ -241,6 +271,8 @@ namespace MoraeGames.UI
             }
             if (phase != _lastPhase)
             {
+                _lastGuidance = -1;
+                if (phaseText != null) phaseText.color = Color.white;
                 int previous = _lastPhase; _lastPhase = phase;
                 if (phaseText != null) phaseText.text = phase == 0 ? "곧 시작합니다" : phase == 2 ? "체포됨 · 동료의 구출을 기다리세요" :
                     phase == 4 ? "경기 종료" : phase == 5 ? "플레이어 연결 중" : _localRobber == null ? "추격 중 · 도둑을 체포하세요" : "도주 중 · 전리품을 노리세요";
@@ -248,6 +280,41 @@ namespace MoraeGames.UI
                 if (phase == 1 && previous == 2 && _systemMessageUI != null) _systemMessageUI.ShowMessage("구출 성공! 다시 도망치세요", Color.green);
             }
             if (_goUntil > 0 && Time.unscaledTime > _goUntil) { _goUntil = 0; _lastPhase = -1; }
+        }
+
+        /// <summary>Explains the server's pursuit state and the next useful action without exposing hidden enemies.</summary>
+        private void UpdatePursuitGuidance()
+        {
+            if (_guidanceText == null) return;
+            bool visible = _localRobber != null && !_inGameManager.IsReadyPhase && !_inGameManager.IsGameOver;
+            _guidanceText.transform.parent.gameObject.SetActive(visible);
+            if (!visible) { _lastGuidance = -1; _lastPursuit = AICopController.PursuitState.Clear; _escapedUntil = 0; return; }
+            var pursuit = NetworkSessionManager.IsNetworked && _localNetworkCharacter != null
+                ? _localNetworkCharacter.PursuitState : AICopController.GetPursuitState(_localRobber);
+            if (_localRobber.IsArrested) { pursuit = AICopController.PursuitState.Clear; _escapedUntil = 0; }
+            else if (_lastPursuit != AICopController.PursuitState.Clear && pursuit == AICopController.PursuitState.Clear)
+                _escapedUntil = Time.time + 3f;
+            _lastPursuit = pursuit;
+            int state = _localRobber.IsArrested ? 4 : pursuit == AICopController.PursuitState.Chasing ? 1 :
+                pursuit == AICopController.PursuitState.Searching ? 2 : Time.time < _escapedUntil ? 3 :
+                _lastArrestedCount > 0 ? 5 : HeistBuilding.NearestAlarm(_localRobber.transform.position) != null ? 6 : 0;
+            if (_goUntil > 0) { _lastGuidance = -1; return; }
+            if (state == _lastGuidance) return;
+            _lastGuidance = state;
+            if (!_localRobber.IsArrested && phaseText != null)
+            {
+                phaseText.text = state == 1 ? "추격 중! · 경찰이 나를 보고 있어요" : state == 2 ? "수색 중 · 마지막 위치를 찾고 있어요" :
+                    state == 3 ? "추격 해제! · 다시 탈취를 노리세요" : "도주 중 · 현재 나를 쫓는 경찰 없음";
+                phaseText.color = state == 1 ? new Color(1, .4f, .3f) : state == 2 ? new Color(1, .8f, .25f) : new Color(.55f, 1, .8f);
+            }
+            _guidanceText.text = state == 1 ? "건물 모서리로 시야를 끊으세요\nQ / 스킬로 도주할 틈을 만드세요" :
+                state == 2 ? "같은 자리에 머물지 말고 다른 출구로 이동하세요\n다시 보이면 추격이 이어집니다" :
+                state == 3 ? "추격은 끝났지만 다시 발견될 수 있어요\n보석 탈취 또는 동료 구출을 선택하세요" :
+                state == 4 ? "동료가 감옥 정문 밖에서 F / 행동을 누르면 구출\n구출되면 문 밖에서 다시 도주합니다" :
+                state == 5 ? "동료가 감옥에 있어요 · 정문 밖에서 F / 행동 유지\n움직이거나 체포되면 구출 진행이 취소됩니다" :
+                state == 6 ? "알람 발생 · 경찰이 건물로 접근할 수 있어요\n탈취를 계속할지 다른 출구로 빠질지 선택하세요" :
+                "건물 안 보석 앞에서 F / 행동 유지 · Q / 스킬\n목표 전리품 확보 또는 시간 종료까지 팀 생존";
+            if (state == 0) _guidanceText.SetText("건물 안 보석 앞에서 F / 행동 유지 · Q / 스킬\n전리품 {0}% 확보 또는 시간 종료까지 팀 생존", GameConstants.LootWinThreshold * 100);
         }
 
         private void UpdateReadyCountdownUI()

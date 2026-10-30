@@ -57,6 +57,8 @@ namespace MoraeGames.Network
 
         private static NetworkManager _callbackManager;
         private static int _sessionRevision;
+        public static bool SupportsDirectLan => Application.platform != RuntimePlatform.WebGLPlayer;
+        private static string RelayProtocol => SupportsDirectLan ? "dtls" : "wss";
 
         // ---------------------------------------------------------------- Relay
 
@@ -88,7 +90,8 @@ namespace MoraeGames.Network
                 if (cancellationToken.IsCancellationRequested || revision != _sessionRevision || nm == null) return null;
 
                 var transport = nm.GetComponent<UnityTransport>();
-                transport.SetRelayServerData(new RelayServerData(allocation, "dtls"));
+                transport.UseWebSockets = !SupportsDirectLan;
+                transport.SetRelayServerData(new RelayServerData(allocation, RelayProtocol));
 
                 if (!StartHostInternal(nm)) return null;
 
@@ -127,7 +130,8 @@ namespace MoraeGames.Network
                 if (cancellationToken.IsCancellationRequested || revision != _sessionRevision || nm == null) return false;
 
                 var transport = nm.GetComponent<UnityTransport>();
-                transport.SetRelayServerData(new RelayServerData(allocation, "dtls"));
+                transport.UseWebSockets = !SupportsDirectLan;
+                transport.SetRelayServerData(new RelayServerData(allocation, RelayProtocol));
 
                 RegisterCallbacks(nm);
                 if (!nm.StartClient()) return false;
@@ -161,6 +165,7 @@ namespace MoraeGames.Network
         /// <summary>LAN/dev fallback: hosts on all interfaces without Relay.</summary>
         public static bool StartHost(ushort port = DefaultPort)
         {
+            if (!SupportsDirectLan) return false;
             NetworkManager nm = NetworkManager.Singleton;
             if (port == 0 || IsNetworked || (nm != null && (nm.IsListening || nm.ShutdownInProgress))) return false;
             if (nm == null)
@@ -186,6 +191,7 @@ namespace MoraeGames.Network
         /// <summary>LAN/dev fallback: joins a direct-IP host.</summary>
         public static bool StartClient(string address)
         {
+            if (!SupportsDirectLan) return false;
             NetworkManager nm = NetworkManager.Singleton;
             if (!LanAddress.TryParse(address, out string ip, out ushort port) || IsNetworked ||
                 (nm != null && (nm.IsListening || nm.ShutdownInProgress))) return false;
@@ -216,6 +222,7 @@ namespace MoraeGames.Network
         /// <summary>Dedicated server: listens without a local player. Headless entry point.</summary>
         public static bool StartServer()
         {
+            if (!SupportsDirectLan) return false;
             NetworkManager nm = NetworkManager.Singleton;
             if (nm == null)
             {

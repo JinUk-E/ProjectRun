@@ -308,10 +308,10 @@ namespace MoraeGames.UI
             _networkBusy = true;
             try
             {
-                SetNetworkStatus("Creating relay session...");
+                SetNetworkStatus("온라인 방을 만들고 있어요…");
                 string code = await NetworkSessionManager.StartHostWithRelayAsync(destroyCancellationToken);
                 if (this == null || _isLeaving) return;
-                if (code == null) { SetNetworkStatus("Could not create room. Check your connection and retry."); return; }
+                if (code == null) { SetNetworkStatus("방을 만들지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요."); return; }
                 SetNetworkStatus($"참가 코드: {code} · 도둑 협동 · 스킬 선택을 서버에서 확인합니다");
                 if (startNetworkMatchButton != null) startNetworkMatchButton.gameObject.SetActive(true);
             }
@@ -324,14 +324,14 @@ namespace MoraeGames.UI
             if (_lanPanel != null && _lanPanel.HandleJoin()) return;
             if (_isLeaving || _networkBusy || NetworkSessionManager.IsNetworked) return;
             string code = joinCodeInput != null ? joinCodeInput.text.Trim() : "";
-            if (string.IsNullOrEmpty(code)) { SetNetworkStatus("Enter the host's room code."); return; }
+            if (string.IsNullOrEmpty(code)) { SetNetworkStatus("친구에게 받은 참가 코드를 입력하세요."); return; }
             _networkBusy = true;
             try
             {
-                SetNetworkStatus("Joining relay session...");
+                SetNetworkStatus("온라인 방을 찾고 있어요…");
                 bool started = await NetworkSessionManager.StartClientWithRelayAsync(code.ToUpperInvariant(), destroyCancellationToken);
                 if (this == null || _isLeaving) return;
-                SetNetworkStatus(started ? "Connecting to host..." : "Join failed. Check the room code and connection.");
+                SetNetworkStatus(started ? "호스트에 연결하고 있어요…" : "참가하지 못했습니다. 참가 코드와 인터넷 연결을 확인해 주세요.");
             }
             finally { _networkBusy = false; }
         }

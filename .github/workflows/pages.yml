@@ -1,0 +1,54 @@
+name: Publish web game to GitHub Pages
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release containing a StarlightWorkshopWeb-*.zip build
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download prepared Unity Web build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: gh release download "$RELEASE_TAG" --pattern 'StarlightWorkshopWeb-*.zip' --dir package
+      - name: Validate and extract game
+        shell: python
+        run: |
+          import pathlib, zipfile
+          archives = list(pathlib.Path('package').glob('*.zip'))
+          assert len(archives) == 1, 'Release must contain exactly one web build ZIP'
+          root = pathlib.Path('_site').resolve()
+          with zipfile.ZipFile(archives[0]) as archive:
+              assert sum(i.file_size for i in archive.infolist()) < 1_000_000_000, 'GitHub Pages site must be under 1 GB'
+              for item in archive.infolist():
+                  target = (root / item.filename).resolve()
+                  assert target.is_relative_to(root), 'Invalid archive path'
+              archive.extractall(root)
+          assert (root / 'index.html').is_file(), 'Missing index.html'
+          assert list((root / 'Build').glob('*.loader.js')), 'Missing Unity loader'
+          assert list((root / 'Build').glob('*wasm*')), 'Missing WebAssembly build'
+          (root / '.nojekyll').touch()
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

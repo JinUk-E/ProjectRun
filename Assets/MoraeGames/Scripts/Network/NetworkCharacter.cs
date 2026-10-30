@@ -13,6 +13,10 @@ namespace MoraeGames.Network
     public class NetworkCharacter : NetworkBehaviour
     {
         private readonly NetworkVariable<bool> _isAiControlled = new NetworkVariable<bool>(false);
+        private readonly NetworkVariable<byte> _pursuitState = new NetworkVariable<byte>(0,
+            NetworkVariableReadPermission.Owner, NetworkVariableWritePermission.Server);
+        /// <summary>Server-confirmed police attention, replicated only to this player's owner.</summary>
+        public AICopController.PursuitState PursuitState => (AICopController.PursuitState)_pursuitState.Value;
         private PlayerController _player;
         private CopController _cop;
         private RobberController _robber;
@@ -175,6 +179,7 @@ namespace MoraeGames.Network
             if (!IsSpawned || IsAiControlled) return;
             if (IsServer)
             {
+                _pursuitState.Value = (byte)(MatchAllowsActions ? AICopController.GetPursuitState(_robber) : AICopController.PursuitState.Clear);
                 if (IsOwner) return;
                 _snapshotTimer -= Time.deltaTime;
                 if (_snapshotTimer > 0f) return;

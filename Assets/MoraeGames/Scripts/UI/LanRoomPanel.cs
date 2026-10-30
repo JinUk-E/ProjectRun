@@ -33,12 +33,12 @@ namespace MoraeGames.UI
             _modeButton.name = "ConnectionModeButton";
             _modeButton.GetComponent<Image>().color = new Color(.12f, .35f, .6f);
             _modeLabel = _modeButton.GetComponentInChildren<TMP_Text>();
-            _lan = NetworkSessionManager.CurrentJoinCode == null;
+            _lan = NetworkSessionManager.SupportsDirectLan && NetworkSessionManager.CurrentJoinCode == null;
             lobby.joinCodeInput.contentType = TMP_InputField.ContentType.Standard;
             lobby.joinCodeInput.lineType = TMP_InputField.LineType.SingleLine;
             lobby.joinCodeInput.onValueChanged.AddListener(OnInputChanged);
             Refresh();
-            Status(NetworkSessionManager.LastConnectionMessage ?? "같은 공유기 / Wi-Fi에서 함께 플레이 · 기본 포트 7777\n호스트는 LAN 방 만들기, 친구는 호스트 IPv4 주소로 참가");
+            Status(NetworkSessionManager.LastConnectionMessage ?? (NetworkSessionManager.SupportsDirectLan ? "같은 공유기 / Wi-Fi에서 함께 플레이 · 기본 포트 7777\n호스트는 LAN 방 만들기, 친구는 호스트 IPv4 주소로 참가" : "친구와 함께: 방 만들기 → 참가 코드 공유\n혼자 즐기기: 스킬 선택 → 연습 경기 시작"));
         }
 
         private void OnDestroy()
@@ -51,6 +51,7 @@ namespace MoraeGames.UI
 
         public void ToggleMode()
         {
+            if (!NetworkSessionManager.SupportsDirectLan) return;
             if (NetworkSessionManager.IsNetworked || _lobby.NetworkBusy) return;
             if (_lan) _lanInput = _lobby.joinCodeInput.text; else _relayInput = _lobby.joinCodeInput.text;
             _lan = !_lan;
@@ -66,7 +67,7 @@ namespace MoraeGames.UI
             if (NetworkSessionManager.IsNetworked)
             {
                 string value = NetworkSessionManager.CurrentJoinCode ?? NetworkSessionManager.CurrentLanEndpoint;
-                if (!string.IsNullOrEmpty(value)) GUIUtility.systemCopyBuffer = value;
+                if (!string.IsNullOrEmpty(value)) WebPlatform.CopyText(value);
                 return true;
             }
             if (!_lan) return false;
@@ -123,7 +124,7 @@ namespace MoraeGames.UI
                     NetworkSessionManager.Shutdown();
                     _connectingAt = -1;
                     Refresh();
-                    Status("연결 시간이 초과됐습니다. 호스트 주소·같은 네트워크·UDP 방화벽을 확인하고 재시도하세요.");
+                    Status(_lan ? "연결 시간이 초과됐습니다. 호스트 주소·같은 네트워크·UDP 방화벽을 확인하고 재시도하세요." : "연결 시간이 초과됐습니다. 참가 코드와 호스트 접속 상태를 확인하고 다시 시도하세요.");
                 }
             }
             else _connectingAt = -1;
@@ -133,8 +134,8 @@ namespace MoraeGames.UI
         {
             _wasActive = NetworkSessionManager.IsNetworked;
             _wasBusy = _lobby.NetworkBusy;
-            _modeButton.interactable = !_wasActive && !_wasBusy;
-            _modeLabel.text = _lan ? "LAN 선택됨 · 인터넷으로 ↔" : "인터넷 선택됨 · LAN으로 ↔";
+            _modeButton.interactable = NetworkSessionManager.SupportsDirectLan && !_wasActive && !_wasBusy;
+            _modeLabel.text = !NetworkSessionManager.SupportsDirectLan ? "온라인 · 참가 코드로 함께하기" : _lan ? "LAN 선택됨 · 인터넷으로 ↔" : "인터넷 선택됨 · LAN으로 ↔";
             var input = _lobby.joinCodeInput;
             input.characterLimit = _lan ? 21 : 10;
             input.readOnly = _wasActive || _wasBusy;

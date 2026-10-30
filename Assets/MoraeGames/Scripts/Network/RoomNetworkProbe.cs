@@ -27,6 +27,9 @@ namespace MoraeGames.Network
         private PrisonZone _prison;
         private bool _doorStarted, _doorCompleted, _doorProgressSeen;
         private bool _lanUi, _connectionRequested;
+        private AICopController _pursuitCop;
+        private Transform _pursuitTarget;
+        private bool _chaseSeen, _searchSeen, _clearSeen;
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
         {
@@ -95,6 +98,13 @@ namespace MoraeGames.Network
                         foreach(var ai in FindObjectsByType<AIController>(FindObjectsSortMode.None))ai.enabled=false;
                         foreach(var agent in FindObjectsByType<UnityEngine.AI.NavMeshAgent>(FindObjectsSortMode.None))if(agent.enabled && agent.isOnNavMesh)agent.isStopped=true;
                         _player=PlayerController.Instances.First(p=>p.IsLocallyControlled);_hud=FindFirstObjectByType<InGameUIManager>();
+                        _chaseSeen = _searchSeen = _clearSeen = false;
+                        if (_peer == 0)
+                        {
+                            _pursuitCop = FindFirstObjectByType<AICopController>(); _pursuitCop.enabled = true;
+                            typeof(AICopController).GetField("_decisionTimer", BindingFlags.Instance|BindingFlags.NonPublic).SetValue(_pursuitCop, float.MaxValue);
+                            _pursuitTarget = PlayerController.Instances.OfType<RobberController>().First(p => !p.GetComponent<NetworkCharacter>().IsAiControlled && p.GetComponent<AbilityHolder>().abilityData is EscapeTrapData).transform;
+                        }
                         Check(nm.LocalClientId==_id,"Client identity changed");
                         Check(_player is RobberController,"Human must spawn as robber");
                         Check(PlayerController.Instances.OfType<CopController>().All(p=>!p.IsLocallyControlled),"Human police spawned");
@@ -104,6 +114,25 @@ namespace MoraeGames.Network
                         Check(PingSystem.Instance.ReceivedPingCount==0,"Ping state leaked from previous round");
                     }
                     float elapsed=Time.unscaledTime-_playing;
+                    // Network scene transitions despawn the old player before the new lobby becomes active.
+                    if (_player == null) return;
+                    if (_peer == 0 && _pursuitCop != null)
+                    {
+                        var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+                        typeof(AICopController).GetField("_currentTarget", flags).SetValue(_pursuitCop, elapsed >= .75f && elapsed < 1.8f ? _pursuitTarget : null);
+                        typeof(AICopController).GetField("_lastTrackedTarget", flags).SetValue(_pursuitCop, _pursuitTarget);
+                        typeof(AICopController).GetField("_lastSeenAt", flags).SetValue(_pursuitCop, elapsed >= .75f && elapsed < 3.5f ? Time.time : -100f);
+                    }
+                    var pursuit = _player.GetComponent<NetworkCharacter>().PursuitState;
+                    if (elapsed > .3f && elapsed < .5f) Check(pursuit == AICopController.PursuitState.Clear, "Pursuit did not reset before the controlled chase");
+                    if (_peer == 3)
+                    {
+                        if (pursuit == AICopController.PursuitState.Chasing) _chaseSeen = true;
+                        if (_chaseSeen && pursuit == AICopController.PursuitState.Searching) _searchSeen = true;
+                        if (_searchSeen && pursuit == AICopController.PursuitState.Clear) _clearSeen = true;
+                        if (elapsed > 4.8f) Check(_chaseSeen && _searchSeen && _clearSeen, "Owner did not receive chase/search/clear sequence");
+                    }
+                    else Check(pursuit == AICopController.PursuitState.Clear, "Pursuit leaked to another player");
                     if(_peer==0 && elapsed>2 && !_alarmBuilding.AlarmActive)_alarmBuilding.RecordTampering(2);
                     if(_peer==0 && elapsed>2.4f && !_doorStarted)
                     {
@@ -132,7 +161,7 @@ namespace MoraeGames.Network
                         Check(PingSystem.Instance.ReceivedPingCount==expected,"Team ping or spam limit mismatch: "+PingSystem.Instance.ReceivedPingCount+" expected="+expected);
                         if(_peer>=2)Check(_validation==2,"Selection rejection was not verified");
                     }
-                    if(_round==2 && elapsed>(_peer==0?6:5)){Finish(true,"Four robbers; rejected police/invalid skill; cooperative pings; door rescue progress, opening and release replicated; gate reset and changed skill across two rounds. No progression awarded.");return;}
+                    if(_round==2 && elapsed>(_peer==0?6:5)){Finish(true,"Four robbers; owner-only chase/search/clear replication and reset; rejected invalid selections; pings and prison door rescue; rematch with changed skill. No progression awarded.");return;}
                     if(_round==1 && elapsed>6 && !_ended)
                     {
                         // Enter a controlled result state without touching user progression saves.

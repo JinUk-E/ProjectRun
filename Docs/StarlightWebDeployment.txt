@@ -1,0 +1,50 @@
+별빛공방: 경찰과 도둑 웹 배포
+
+빌드
+Unity 6000.3.6f1 + Web Build Support가 필요합니다.
+Editor 메뉴: MoraeGames > Build Starlight Workshop Web
+배치: Unity.exe -batchmode -quit -projectPath <프로젝트> -buildTarget WebGL -executeMethod MoraeGames.Editor.WebReleaseBuild.Run -logFile <로그>
+출력: Builds/StarlightWorkshopWeb/ (전체 폴더를 함께 배포)
+배포 ZIP 생성: pwsh -File Tools/Web/package-web.ps1
+ZIP 출력: Builds/Distribution/ (SHA256 함께 출력)
+
+GitHub Pages 배포
+- 저장소: https://github.com/JinUk-E/ProjectRun
+- Pages 주소: https://jinuk-e.github.io/ProjectRun/ (첫 배포 성공 후 사용 가능)
+- Settings > Pages > Source: GitHub Actions
+- 로컬 Unity Web 빌드 후 package-web.ps1로 ZIP 생성.
+- gh 인증 후: pwsh -File Tools/Web/publish-pages.ps1 -Tag web-test-0.1.0 -ZipPath <배포ZIP>
+- 이 명령은 공개 테스트 릴리스를 업로드하고 Pages 배포를 시작하므로 공개할 준비가 된 빌드에만 실행.
+- Actions의 Publish web game to GitHub Pages가 성공한 후 URL 확인.
+- 워크플로는 완성된 ZIP을 배포하며 Unity 컴파일을 수행하지 않음. Unity 계정/라이선스 비밀값을 GitHub에 추가할 필요 없음.
+- .unityweb 압축 해제 fallback을 사용하므로 별도 HTTP 압축 헤더 설정이 불가능한 GitHub Pages에도 적용 가능.
+- Pages는 정적 게임 파일 호스팅, Relay는 실시간 통신 담당. Pages만으로 Relay 설정을 대체하지 않음.
+
+별빛공방에 연결하는 방법
+1. 출력 폴더의 index.html, Build/, StreamingAssets/ 등 전체 내용을 동일한 HTTPS 경로에 업로드.
+2. 예: /games/cops-and-robbers/ 아래 배포하고 별빛공방 게임 카드에서 해당 주소로 연결.
+3. 현재 템플릿은 상대 경로를 사용하므로 루트나 하위 경로에 배포 가능. URL은 /로 끝나도록 리다이렉트.
+4. iframe 사용 시 allow="fullscreen; clipboard-write; autoplay" 및 allowfullscreen 지정. 우선 새 페이지로 여는 방식 권장.
+5. 현재 패키지는 Gzip + Unity JavaScript 압축 해제 fallback 사용. .unityweb 파일에 Content-Encoding: gzip을 임의로 붙이지 말 것. application/octet-stream으로 원본 그대로 제공 가능.
+6. .js는 application/javascript, .wasm을 직접 제공할 경우 application/wasm. index.html은 no-cache, 해시 파일은 긴 캐시 허용.
+7. 사이트 SPA의 index.html fallback이 게임 Build 파일 요청을 가로채지 않게 정적 경로 우선 처리.
+8. 첫 배포는 비공개 테스트 URL에서 검증 후 별빛공방에 링크 공개. 이 작업으로 사이트나 서비스가 자동 공개되지는 않음.
+
+로컬 확인
+node Tools/Web/serve-web.mjs
+http://127.0.0.1:8088/ 에서 게임 실행 버튼 클릭. file://로 HTML을 직접 열지 말 것.
+Ctrl+C로 로컬 서버 종료.
+
+온라인 설정
+- 웹에서는 Relay wss + UnityTransport WebSocket 사용. 직접 UDP LAN 메뉴는 제공하지 않음.
+- Unity Dashboard에서 현재 프로젝트의 Authentication 익명 로그인 및 Relay 사용 가능 상태 확인.
+- 정적 웹 호스팅에는 비밀 API 키를 넣지 않음. 기존 클라이언트 SDK를 통해 익명 인증/Relay 할당 사용.
+- 두 개의 독립 브라우저 프로필 또는 서로 다른 기기에서 방 생성, 코드 참가, 경기 시작, 재경기 검증.
+- 호스트 탭을 닫으면 게임 연결 종료. 호스트 탭을 백그라운드로 보내면 브라우저 제한으로 지연될 수 있음.
+- 공개 전에 Relay 사용량/예산과 허용 도메인/CSP/웹소켓 접속을 운영 환경에서 확인.
+
+공개 전 확인
+Chrome/Edge 및 macOS Safari에서 로딩, 키보드 입력, 소리, 전체화면, 복사, 탈취, 구출, 재경기 확인.
+실제 다른 인터넷 연결에서 Relay 호스트/참가 확인. 로컬 연습 성공은 온라인 서비스 검증과 다름.
+모바일 브라우저는 이번 첫 공개 대상이 아님. 성능/메모리/터치 UI 별도 검증 후 지원 확대.
+Kenney 무료 에셋 출처와 라이선스는 프로젝트 Art 폴더에 보관. 배포물에도 라이선스 안내 포함.
